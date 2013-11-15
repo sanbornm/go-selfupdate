@@ -101,6 +101,7 @@ func main() {
         if file.Name() == version {
             continue
         }
+
         os.Mkdir(filepath.Join(genDir, file.Name(), version), 0755)
 
         fName := filepath.Join(genDir, file.Name(), plat + ".gz")
