@@ -87,7 +87,7 @@ func (u *Updater) BackgroundRun() {
                 //}
                 // TODO(bgentry): logger isn't on Windows. Replace w/ proper error reports.
                 if err := u.update(); err != nil {
-                        log.Fatal(err)
+                        log.Println(err)
                 }
         }
 }
