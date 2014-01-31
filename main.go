@@ -107,8 +107,8 @@ func main() {
 		fName := filepath.Join(genDir, file.Name(), plat+".gz")
 		old, err := os.Open(fName)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Can't open %s: error: %s\n", fName, err)
-			os.Exit(1)
+            // Don't have an old release for this os/arch, continue on
+            continue
 		}
 
 		fName = filepath.Join(genDir, version, plat+".gz")
