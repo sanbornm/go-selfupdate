@@ -15,7 +15,7 @@ import (
 	//"encoding/base64"
 )
 
-var plat string
+var plat, appPath, version, genDir string
 
 type current struct {
 	Version string
@@ -58,21 +58,14 @@ func newGzReader(r io.ReadCloser) io.ReadCloser {
 	return g
 }
 
-func main() {
-	plat = os.Getenv("GOOS") + "-" + os.Getenv("GOARCH")
-
-	appPath := os.Args[1]
-	version := os.Args[2]
-	genDir := "public"
-	os.MkdirAll(genDir, 0755)
-
-	c := current{Version: version, Sha256: generateSha256(appPath)}
+func createUpdate(path string, platform string) {
+	c := current{Version: version, Sha256: generateSha256(path)}
 
 	b, err := json.MarshalIndent(c, "", "    ")
 	if err != nil {
 		fmt.Println("error:", err)
 	}
-	err = ioutil.WriteFile(filepath.Join(genDir, plat+".json"), b, 0755)
+	err = ioutil.WriteFile(filepath.Join(genDir, platform+".json"), b, 0755)
 	if err != nil {
 		panic(err)
 	}
@@ -81,13 +74,13 @@ func main() {
 
 	var buf bytes.Buffer
 	w := gzip.NewWriter(&buf)
-	f, err := ioutil.ReadFile(appPath)
+	f, err := ioutil.ReadFile(path)
 	if err != nil {
 		panic(err)
 	}
 	w.Write(f)
 	w.Close() // You must close this first to flush the bytes to the buffer.
-	err = ioutil.WriteFile(filepath.Join(genDir, version, plat+".gz"), buf.Bytes(), 0755)
+	err = ioutil.WriteFile(filepath.Join(genDir, version, platform+".gz"), buf.Bytes(), 0755)
 
 	files, err := ioutil.ReadDir(genDir)
 	if err != nil {
@@ -104,14 +97,14 @@ func main() {
 
 		os.Mkdir(filepath.Join(genDir, file.Name(), version), 0755)
 
-		fName := filepath.Join(genDir, file.Name(), plat+".gz")
+		fName := filepath.Join(genDir, file.Name(), platform+".gz")
 		old, err := os.Open(fName)
 		if err != nil {
-            // Don't have an old release for this os/arch, continue on
-            continue
+			// Don't have an old release for this os/arch, continue on
+			continue
 		}
 
-		fName = filepath.Join(genDir, version, plat+".gz")
+		fName = filepath.Join(genDir, version, platform+".gz")
 		newF, err := os.Open(fName)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Can't open %s: error: %s\n", fName, err)
@@ -126,7 +119,26 @@ func main() {
 		if err := binarydist.Diff(ar, br, patch); err != nil {
 			panic(err)
 		}
-		ioutil.WriteFile(filepath.Join(genDir, file.Name(), version, plat), patch.Bytes(), 0755)
+		ioutil.WriteFile(filepath.Join(genDir, file.Name(), version, platform), patch.Bytes(), 0755)
+	}
+}
+
+func main() {
+	plat = os.Getenv("GOOS") + "-" + os.Getenv("GOARCH")
+
+	appPath = os.Args[1]
+	version = os.Args[2]
+	genDir = "public"
+	os.MkdirAll(genDir, 0755)
+
+	// If dir is given create update for each file
+	files, err := ioutil.ReadDir(appPath)
+	if err == nil {
+		for _, file := range files {
+			createUpdate(filepath.Join(appPath, file.Name()), file.Name())
+		}
+		os.Exit(0)
 	}
 
+	createUpdate(appPath, plat)
 }
