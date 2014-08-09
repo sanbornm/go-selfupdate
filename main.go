@@ -123,8 +123,20 @@ func createUpdate(path string, platform string) {
 	}
 }
 
+func printUsage() {
+    fmt.Println("Go-Selfupdate - Enable your Golang applications to self update.\n\n")
+    fmt.Println("Usage:\n")
+    fmt.Println("\tSingle platform: go-selfupdate myapp 1.2")
+    fmt.Println("\tCross platform: go-selfupdate /tmp/mybinares/ 1.2")
+}
+
 func main() {
 	plat = os.Getenv("GOOS") + "-" + os.Getenv("GOARCH")
+
+    if len(os.Args) < 2 {
+        printUsage()
+        os.Exit(0)
+    }
 
 	appPath = os.Args[1]
 	version = os.Args[2]
