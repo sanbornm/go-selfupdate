@@ -130,14 +130,21 @@ func printUsage() {
 	fmt.Println("\tCross platform: go-selfupdate /tmp/mybinares/ 1.2")
 }
 
-func main() {
-	plat = os.Getenv("GOOS") + "-" + os.Getenv("GOARCH")
-
+func isArgsPresent() bool {
 	if len(os.Args) < 2 {
+		return false
+	}
+
+	return true
+}
+
+func main() {
+	if isArgsPresent() == false {
 		printUsage()
 		os.Exit(0)
 	}
 
+	plat = os.Getenv("GOOS") + "-" + os.Getenv("GOARCH")
 	appPath = os.Args[1]
 	version = os.Args[2]
 	genDir = "public"
