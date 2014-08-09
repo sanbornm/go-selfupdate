@@ -124,18 +124,18 @@ func createUpdate(path string, platform string) {
 }
 
 func printUsage() {
-    fmt.Println("Go-Selfupdate - Enable your Golang applications to self update.\n\n")
-    fmt.Println("Usage:\n")
-    fmt.Println("\tSingle platform: go-selfupdate myapp 1.2")
-    fmt.Println("\tCross platform: go-selfupdate /tmp/mybinares/ 1.2")
+	fmt.Println("Go-Selfupdate - Enable your Golang applications to self update.\n\n")
+	fmt.Println("Usage:\n")
+	fmt.Println("\tSingle platform: go-selfupdate myapp 1.2")
+	fmt.Println("\tCross platform: go-selfupdate /tmp/mybinares/ 1.2")
 }
 
 func isArgsPresent() bool {
-    if len(os.Args) < 2 {
-        return false
-    }
+	if len(os.Args) < 2 {
+		return false
+	}
 
-    return true
+	return true
 }
 
 func createBuildDir() {
@@ -143,17 +143,17 @@ func createBuildDir() {
 }
 
 func main() {
-    if isArgsPresent() == false {
-        printUsage()
-        os.Exit(0)
-    }
+	if isArgsPresent() == false {
+		printUsage()
+		os.Exit(0)
+	}
 
 	plat = os.Getenv("GOOS") + "-" + os.Getenv("GOARCH")
 	appPath = os.Args[1]
 	version = os.Args[2]
 	genDir = "public"
 
-    createBuildDir()
+	createBuildDir()
 
 	// If dir is given create update for each file
 	files, err := ioutil.ReadDir(appPath)
