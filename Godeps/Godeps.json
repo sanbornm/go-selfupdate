@@ -1,0 +1,10 @@
+{
+    "ImportPath": "github.com/sanbornm/go-selfupdate",
+    "GoVersion": "go1.3",
+    "Deps": [
+        {
+            "ImportPath": "github.com/inconshreveable/go-update",
+            "Rev": "3f0466666779bd2143f368a207b0641f0ed536e8"
+        }
+    ]
+}
