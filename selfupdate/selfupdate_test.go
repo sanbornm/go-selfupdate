@@ -1,9 +1,8 @@
 package selfupdate
 
-import(
-    "testing"
+import (
+	"testing"
 )
-
 
 func TestUpdater() {
 }
