@@ -29,6 +29,7 @@ const (
 const devValidTime = 7 * 24 * time.Hour
 
 var ErrHashMismatch = errors.New("new file hash mismatch after patch")
+var up = update.New()
 
 // Update protocol.
 //
@@ -76,7 +77,7 @@ func (u *Updater) getExecRelativeDir(dir string) string {
 func (u *Updater) BackgroundRun() {
 	os.MkdirAll(u.getExecRelativeDir(u.Dir), 0777)
 	if u.wantUpdate() {
-		if err := update.SanityCheck(); err != nil {
+		if err := up.CanUpdate(); err != nil {
 			// fail
 			return
 		}
@@ -141,7 +142,7 @@ func (u *Updater) update() error {
 	// it can't be renamed if a handle to the file is still open
 	old.Close()
 
-	err, errRecover := update.FromStream(bytes.NewBuffer(bin))
+	err, errRecover := up.FromStream(bytes.NewBuffer(bin))
 	if errRecover != nil {
 		return fmt.Errorf("update and recovery errors: %q %q", err, errRecover)
 	}
