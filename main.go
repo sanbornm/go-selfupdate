@@ -14,7 +14,6 @@ import (
 	"runtime"
 
 	"github.com/kr/binarydist"
-	//"encoding/base64"
 )
 
 var version, genDir string
