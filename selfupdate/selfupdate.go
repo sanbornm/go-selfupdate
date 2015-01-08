@@ -1,37 +1,4 @@
-package selfupdate
-
-import (
-	"bitbucket.org/kardianos/osext"
-	"bytes"
-	"compress/gzip"
-	"crypto/sha256"
-	"encoding/json"
-	"errors"
-	"fmt"
-	"github.com/inconshreveable/go-update"
-	"github.com/kr/binarydist"
-	"io"
-	"io/ioutil"
-	"log"
-	"math/rand"
-	"net/http"
-	"os"
-	"path/filepath"
-	"runtime"
-	"time"
-)
-
-const (
-	upcktimePath = "cktime"
-	plat         = runtime.GOOS + "-" + runtime.GOARCH
-)
-
-const devValidTime = 7 * 24 * time.Hour
-
-var ErrHashMismatch = errors.New("new file hash mismatch after patch")
-var up = update.New()
-
-// Update protocol.
+// Update protocol:
 //
 //   GET hk.heroku.com/hk/linux-amd64.json
 //
@@ -54,13 +21,66 @@ var up = update.New()
 //
 //   200 ok
 //   [gzipped executable data]
+//
+//
+package selfupdate
+
+import (
+	"bytes"
+	"compress/gzip"
+	"crypto/sha256"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"io/ioutil"
+	"log"
+	"math/rand"
+	"net/http"
+	"os"
+	"path/filepath"
+	"runtime"
+	"time"
+
+	"bitbucket.org/kardianos/osext"
+	"github.com/inconshreveable/go-update"
+	"github.com/kr/binarydist"
+)
+
+const (
+	upcktimePath = "cktime"
+	plat         = runtime.GOOS + "-" + runtime.GOARCH
+)
+
+const devValidTime = 7 * 24 * time.Hour
+
+var ErrHashMismatch = errors.New("new file hash mismatch after patch")
+var up = update.New()
+
+// Updater is the configuration and runtime data for doing an update.
+//
+// Note that ApiURL, BinURL and DiffURL should have the same value if all files are available at the same location.
+//
+// Example:
+//
+//  updater := &selfupdate.Updater{
+//  	CurrentVersion: version,
+//  	ApiURL:         "http://updates.yourdomain.com/",
+//  	BinURL:         "http://updates.yourdownmain.com/",
+//  	DiffURL:        "http://updates.yourdomain.com/",
+//  	Dir:            "update/",
+//  	CmdName:        "myapp", // app name
+//  }
+//  if updater != nil {
+//  	go updater.BackgroundRun()
+//  }
 type Updater struct {
-	CurrentVersion string
-	ApiURL         string
-	CmdName        string
-	BinURL         string
-	DiffURL        string
-	Dir            string
+	CurrentVersion string // Currently running version.
+	ApiURL         string // Base URL for API requests (json files).
+	CmdName        string // Command name is appended to the ApiURL like http://apiurl/CmdName/. This represents one binary.
+	BinURL         string // Base URL for full binary downloads.
+	DiffURL        string // Base URL for diff downloads.
+	Dir            string // Directory to store selfupdate state.
 	Info           struct {
 		Version string
 		Sha256  []byte
@@ -74,6 +94,7 @@ func (u *Updater) getExecRelativeDir(dir string) string {
 	return path
 }
 
+// BackgroundRun starts the update check and apply cycle.
 func (u *Updater) BackgroundRun() {
 	os.MkdirAll(u.getExecRelativeDir(u.Dir), 0777)
 	if u.wantUpdate() {

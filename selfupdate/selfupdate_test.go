@@ -1,8 +1,7 @@
 package selfupdate
 
-import (
-	"testing"
-)
+import "testing"
 
-func TestUpdater() {
+func TestUpdater(t *testing.T) {
+
 }

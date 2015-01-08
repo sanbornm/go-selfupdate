@@ -5,17 +5,18 @@ import (
 	"compress/gzip"
 	"crypto/sha256"
 	"encoding/json"
+	"flag"
 	"fmt"
-	"github.com/kr/binarydist"
 	"io"
 	"io/ioutil"
 	"os"
 	"path/filepath"
-	//"runtime"
-	//"encoding/base64"
+	"runtime"
+
+	"github.com/kr/binarydist"
 )
 
-var plat, appPath, version, genDir string
+var version, genDir string
 
 type current struct {
 	Version string
@@ -124,18 +125,10 @@ func createUpdate(path string, platform string) {
 }
 
 func printUsage() {
-	fmt.Println("Go-Selfupdate - Enable your Golang applications to self update.\n\n")
-	fmt.Println("Usage:\n")
+	fmt.Println("")
+	fmt.Println("Positional arguments:")
 	fmt.Println("\tSingle platform: go-selfupdate myapp 1.2")
 	fmt.Println("\tCross platform: go-selfupdate /tmp/mybinares/ 1.2")
-}
-
-func isArgsPresent() bool {
-	if len(os.Args) < 2 {
-		return false
-	}
-
-	return true
 }
 
 func createBuildDir() {
@@ -143,15 +136,30 @@ func createBuildDir() {
 }
 
 func main() {
-	if isArgsPresent() == false {
+	outputDirFlag := flag.String("o", "public", "Output directory for writing updates")
+
+	var defaultPlatform string
+	goos := os.Getenv("GOOS")
+	goarch := os.Getenv("GOARCH")
+	if goos != "" && goarch != "" {
+		defaultPlatform = goos + "-" + goarch
+	} else {
+		defaultPlatform = runtime.GOOS + "-" + runtime.GOARCH
+	}
+	platformFlag := flag.String("platform", defaultPlatform,
+		"Target platform in the form OS-ARCH. Defaults to running os/arch or the combination of the environment variables GOOS and GOARCH if both are set.")
+
+	flag.Parse()
+	if flag.NArg() < 2 {
+		flag.Usage()
 		printUsage()
 		os.Exit(0)
 	}
 
-	plat = os.Getenv("GOOS") + "-" + os.Getenv("GOARCH")
-	appPath = os.Args[1]
-	version = os.Args[2]
-	genDir = "public"
+	platform := *platformFlag
+	appPath := flag.Arg(0)
+	version = flag.Arg(1)
+	genDir = *outputDirFlag
 
 	createBuildDir()
 
@@ -164,5 +172,5 @@ func main() {
 		os.Exit(0)
 	}
 
-	createUpdate(appPath, plat)
+	createUpdate(appPath, platform)
 }
