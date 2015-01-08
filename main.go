@@ -137,8 +137,17 @@ func createBuildDir() {
 
 func main() {
 	outputDirFlag := flag.String("o", "public", "Output directory for writing updates")
-	platformFlag := flag.String("platform", runtime.GOOS+"-"+runtime.GOARCH,
-		"Target platform in the form OS-ARCH. Defaults to running os/arch.")
+
+	var defaultPlatform string
+	goos := os.Getenv("GOOS")
+	goarch := os.Getenv("GOARCH")
+	if goos != "" && goarch != "" {
+		defaultPlatform = goos + "-" + goarch
+	} else {
+		defaultPlatform = runtime.GOOS + "-" + runtime.GOARCH
+	}
+	platformFlag := flag.String("platform", defaultPlatform,
+		"Target platform in the form OS-ARCH. Defaults to running os/arch or the combination of the environment variables GOOS and GOARCH if both are set.")
 
 	flag.Parse()
 	if flag.NArg() < 2 {
