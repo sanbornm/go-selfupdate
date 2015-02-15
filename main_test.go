@@ -1,4 +1,4 @@
-package selfupdate
+package main
 
 import "testing"
 
