@@ -90,17 +90,16 @@ type Updater struct {
 func (u *Updater) getExecRelativeDir(dir string) string {
 	filename, _ := osext.Executable()
 	path := filepath.Join(filepath.Dir(filename), dir)
-	fmt.Println(path)
 	return path
 }
 
 // BackgroundRun starts the update check and apply cycle.
-func (u *Updater) BackgroundRun() {
+func (u *Updater) BackgroundRun() error {
 	os.MkdirAll(u.getExecRelativeDir(u.Dir), 0777)
 	if u.wantUpdate() {
 		if err := up.CanUpdate(); err != nil {
 			// fail
-			return
+			return err
 		}
 		//self, err := osext.Executable()
 		//if err != nil {
@@ -109,9 +108,10 @@ func (u *Updater) BackgroundRun() {
 		//}
 		// TODO(bgentry): logger isn't on Windows. Replace w/ proper error reports.
 		if err := u.update(); err != nil {
-			log.Println(err)
+			return err
 		}
 	}
+	return nil
 }
 
 func (u *Updater) wantUpdate() bool {
@@ -146,8 +146,11 @@ func (u *Updater) update() error {
 		if err == ErrHashMismatch {
 			log.Println("update: hash mismatch from patched binary")
 		} else {
-			log.Println("update: patching binary,", err)
+			if u.DiffURL != "" {
+				log.Println("update: patching binary,", err)
+			}
 		}
+
 		bin, err = u.fetchAndVerifyFullBin()
 		if err != nil {
 			if err == ErrHashMismatch {
@@ -174,8 +177,6 @@ func (u *Updater) update() error {
 }
 
 func (u *Updater) fetchInfo() error {
-	fmt.Println(u.ApiURL)
-	fmt.Println(plat)
 	r, err := fetch(u.ApiURL + u.CmdName + "/" + plat + ".json")
 	if err != nil {
 		return err
