@@ -164,12 +164,19 @@ func main() {
 	createBuildDir()
 
 	// If dir is given create update for each file
-	files, err := ioutil.ReadDir(appPath)
-	if err == nil {
-		for _, file := range files {
-			createUpdate(filepath.Join(appPath, file.Name()), file.Name())
+	fi, err := os.Stat(appPath)
+	if err != nil {
+		panic(err)
+	}
+
+	if fi.IsDir() {
+		files, err := ioutil.ReadDir(appPath)
+		if err == nil {
+			for _, file := range files {
+				createUpdate(filepath.Join(appPath, file.Name()), file.Name())
+			}
+			os.Exit(0)
 		}
-		os.Exit(0)
 	}
 
 	createUpdate(appPath, platform)
