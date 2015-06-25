@@ -95,23 +95,28 @@ func (u *Updater) getExecRelativeDir(dir string) string {
 
 // BackgroundRun starts the update check and apply cycle.
 func (u *Updater) BackgroundRun() error {
+	_, err := u.BackgroundRunVerbose()
+	return err
+}
+
+// BackgroundRunVerbose starts the update check and apply cycle.
+//	Returns true if we tried to update, false if we didn't need to update.
+func (u *Updater) BackgroundRunVerbose() (bool, error) {
 	os.MkdirAll(u.getExecRelativeDir(u.Dir), 0777)
-	if u.wantUpdate() {
-		if err := up.CanUpdate(); err != nil {
-			// fail
-			return err
-		}
-		//self, err := osext.Executable()
-		//if err != nil {
-		// fail update, couldn't figure out path to self
-		//return
-		//}
-		// TODO(bgentry): logger isn't on Windows. Replace w/ proper error reports.
-		if err := u.update(); err != nil {
-			return err
-		}
+	if !u.wantUpdate() {
+		return false, nil
 	}
-	return nil
+	if err := up.CanUpdate(); err != nil {
+		// fail
+		return false, err
+	}
+	//self, err := osext.Executable()
+	//if err != nil {
+	// fail update, couldn't figure out path to self
+	//return
+	//}
+	// TODO(bgentry): logger isn't on Windows. Replace w/ proper error reports.
+	return u.update()
 }
 
 func (u *Updater) wantUpdate() bool {
@@ -123,23 +128,23 @@ func (u *Updater) wantUpdate() bool {
 	return writeTime(path, time.Now().Add(wait))
 }
 
-func (u *Updater) update() error {
+func (u *Updater) update() (bool, error) {
 	path, err := osext.Executable()
 	if err != nil {
-		return err
+		return false, err
 	}
 	old, err := os.Open(path)
 	if err != nil {
-		return err
+		return false, err
 	}
 	defer old.Close()
 
 	err = u.fetchInfo()
 	if err != nil {
-		return err
+		return false, err
 	}
 	if u.Info.Version == u.CurrentVersion {
-		return nil
+		return false, nil
 	}
 	bin, err := u.fetchAndVerifyPatch(old)
 	if err != nil {
@@ -158,7 +163,7 @@ func (u *Updater) update() error {
 			} else {
 				log.Println("update: fetching full binary,", err)
 			}
-			return err
+			return true, err
 		}
 	}
 
@@ -168,12 +173,9 @@ func (u *Updater) update() error {
 
 	err, errRecover := up.FromStream(bytes.NewBuffer(bin))
 	if errRecover != nil {
-		return fmt.Errorf("update and recovery errors: %q %q", err, errRecover)
+		return true, fmt.Errorf("update and recovery errors: %q %q", err, errRecover)
 	}
-	if err != nil {
-		return err
-	}
-	return nil
+	return true, err
 }
 
 func (u *Updater) fetchInfo() error {
