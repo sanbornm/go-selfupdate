@@ -43,7 +43,7 @@ import (
 	"time"
 
 	"github.com/kardianos/osext"
-	"github.com/inconshreveable/go-update"
+	"gopkg.in/inconshreveable/go-update.v0"
 	"github.com/kr/binarydist"
 )
 
