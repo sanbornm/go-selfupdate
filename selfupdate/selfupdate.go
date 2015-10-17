@@ -36,15 +36,14 @@ import (
 	"io/ioutil"
 	"log"
 	"math/rand"
-	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
 	"time"
 
 	"github.com/kardianos/osext"
-	"gopkg.in/inconshreveable/go-update.v0"
 	"github.com/kr/binarydist"
+	"gopkg.in/inconshreveable/go-update.v0"
 )
 
 const (
@@ -56,6 +55,7 @@ const devValidTime = 7 * 24 * time.Hour
 
 var ErrHashMismatch = errors.New("new file hash mismatch after patch")
 var up = update.New()
+var defaultHTTPRequester = HTTPRequester{}
 
 // Updater is the configuration and runtime data for doing an update.
 //
@@ -75,12 +75,13 @@ var up = update.New()
 //  	go updater.BackgroundRun()
 //  }
 type Updater struct {
-	CurrentVersion string // Currently running version.
-	ApiURL         string // Base URL for API requests (json files).
-	CmdName        string // Command name is appended to the ApiURL like http://apiurl/CmdName/. This represents one binary.
-	BinURL         string // Base URL for full binary downloads.
-	DiffURL        string // Base URL for diff downloads.
-	Dir            string // Directory to store selfupdate state.
+	CurrentVersion string    // Currently running version.
+	ApiURL         string    // Base URL for API requests (json files).
+	CmdName        string    // Command name is appended to the ApiURL like http://apiurl/CmdName/. This represents one binary.
+	BinURL         string    // Base URL for full binary downloads.
+	DiffURL        string    // Base URL for diff downloads.
+	Dir            string    // Directory to store selfupdate state.
+	Requester      Requester //Optional parameter to override existing http request handler
 	Info           struct {
 		Version string
 		Sha256  []byte
@@ -177,7 +178,7 @@ func (u *Updater) update() error {
 }
 
 func (u *Updater) fetchInfo() error {
-	r, err := fetch(u.ApiURL + u.CmdName + "/" + plat + ".json")
+	r, err := u.fetch(u.ApiURL + u.CmdName + "/" + plat + ".json")
 	if err != nil {
 		return err
 	}
@@ -204,7 +205,7 @@ func (u *Updater) fetchAndVerifyPatch(old io.Reader) ([]byte, error) {
 }
 
 func (u *Updater) fetchAndApplyPatch(old io.Reader) ([]byte, error) {
-	r, err := fetch(u.DiffURL + u.CmdName + "/" + u.CurrentVersion + "/" + u.Info.Version + "/" + plat)
+	r, err := u.fetch(u.DiffURL + u.CmdName + "/" + u.CurrentVersion + "/" + u.Info.Version + "/" + plat)
 	if err != nil {
 		return nil, err
 	}
@@ -227,7 +228,7 @@ func (u *Updater) fetchAndVerifyFullBin() ([]byte, error) {
 }
 
 func (u *Updater) fetchBin() ([]byte, error) {
-	r, err := fetch(u.BinURL + u.CmdName + "/" + u.Info.Version + "/" + plat + ".gz")
+	r, err := u.fetch(u.BinURL + u.CmdName + "/" + u.Info.Version + "/" + plat + ".gz")
 	if err != nil {
 		return nil, err
 	}
@@ -249,15 +250,21 @@ func randDuration(n time.Duration) time.Duration {
 	return time.Duration(rand.Int63n(int64(n)))
 }
 
-func fetch(url string) (io.ReadCloser, error) {
-	resp, err := http.Get(url)
+func (u *Updater) fetch(url string) (io.ReadCloser, error) {
+	if u.Requester == nil {
+		return defaultHTTPRequester.Fetch(url)
+	}
+
+	readCloser, err := u.Requester.Fetch(url)
 	if err != nil {
 		return nil, err
 	}
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("bad http status from %s: %v", url, resp.Status)
+
+	if readCloser == nil {
+		return nil, fmt.Errorf("Fetch was expected to return non-nil ReadCloser")
 	}
-	return resp.Body, nil
+
+	return readCloser, nil
 }
 
 func readTime(path string) time.Time {
