@@ -19,7 +19,7 @@ Enable your Golang applications to self update.  Inspired by Chrome based on Her
 	var updater = &selfupdate.Updater{
 		CurrentVersion: version,
 		ApiURL:         "http://updates.yourdomain.com/",
-		BinURL:         "http://updates.yourdownmain.com/",
+		BinURL:         "http://updates.yourdomain.com/",
 		DiffURL:        "http://updates.yourdomain.com/",
 		Dir:            "update/",
 		CmdName:        "myapp", // app name
