@@ -81,6 +81,7 @@ type Updater struct {
 	BinURL         string    // Base URL for full binary downloads.
 	DiffURL        string    // Base URL for diff downloads.
 	Dir            string    // Directory to store selfupdate state.
+	ForceCheck     bool      // Check for update regardless of cktime timestamp
 	Requester      Requester //Optional parameter to override existing http request handler
 	Info           struct {
 		Version string
@@ -117,7 +118,7 @@ func (u *Updater) BackgroundRun() error {
 
 func (u *Updater) wantUpdate() bool {
 	path := u.getExecRelativeDir(u.Dir + upcktimePath)
-	if u.CurrentVersion == "dev" || readTime(path).After(time.Now()) {
+	if u.CurrentVersion == "dev" || (!u.ForceCheck && readTime(path).After(time.Now())) {
 		return false
 	}
 	wait := 24*time.Hour + randDuration(24*time.Hour)
