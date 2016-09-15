@@ -24,10 +24,9 @@ func TestUpdaterFetchMustReturnNonNilReaderCloser(t *testing.T) {
 		t.Log("Expected an error")
 		t.Fail()
 	}
-
 }
 
-func TestUpdaterWithEmptyPaloadNoErrorNoUpdate(t *testing.T) {
+func TestUpdaterWithEmptyPayloadNoErrorNoUpdate(t *testing.T) {
 	mr := &mockRequester{}
 	mr.handleRequest(
 		func(url string) (io.ReadCloser, error) {
@@ -38,9 +37,23 @@ func TestUpdaterWithEmptyPaloadNoErrorNoUpdate(t *testing.T) {
 
 	err := updater.BackgroundRun()
 	if err != nil {
-		t.Errorf("Error occured: %#v", err)
+		t.Errorf("Error occurred: %#v", err)
 	}
+}
 
+func TestUpdaterWithEmptyPayloadNoErrorNoUpdateEscapedPath(t *testing.T) {
+	mr := &mockRequester{}
+	mr.handleRequest(
+		func(url string) (io.ReadCloser, error) {
+			equals(t, "http://updates.yourdomain.com/myapp%2Bfoo/darwin-amd64.json", url)
+			return newTestReaderCloser("{}"), nil
+		})
+	updater := createUpdaterWithEscapedCharacters(mr)
+
+	err := updater.BackgroundRun()
+	if err != nil {
+		t.Errorf("Error occurred: %#v", err)
+	}
 }
 
 func createUpdater(mr *mockRequester) *Updater {
@@ -51,6 +64,18 @@ func createUpdater(mr *mockRequester) *Updater {
 		DiffURL:        "http://updates.yourdomain.com/",
 		Dir:            "update/",
 		CmdName:        "myapp", // app name
+		Requester:      mr,
+	}
+}
+
+func createUpdaterWithEscapedCharacters(mr *mockRequester) *Updater {
+	return &Updater{
+		CurrentVersion: "1.2+foobar",
+		ApiURL:         "http://updates.yourdomain.com/",
+		BinURL:         "http://updates.yourdownmain.com/",
+		DiffURL:        "http://updates.yourdomain.com/",
+		Dir:            "update/",
+		CmdName:        "myapp+foo", // app name
 		Requester:      mr,
 	}
 }
