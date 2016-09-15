@@ -36,6 +36,7 @@ import (
 	"io/ioutil"
 	"log"
 	"math/rand"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -179,7 +180,7 @@ func (u *Updater) update() error {
 }
 
 func (u *Updater) fetchInfo() error {
-	r, err := u.fetch(u.ApiURL + u.CmdName + "/" + plat + ".json")
+	r, err := u.fetch(u.ApiURL + url.QueryEscape(u.CmdName) + "/" + url.QueryEscape(plat) + ".json")
 	if err != nil {
 		return err
 	}
@@ -206,7 +207,7 @@ func (u *Updater) fetchAndVerifyPatch(old io.Reader) ([]byte, error) {
 }
 
 func (u *Updater) fetchAndApplyPatch(old io.Reader) ([]byte, error) {
-	r, err := u.fetch(u.DiffURL + u.CmdName + "/" + u.CurrentVersion + "/" + u.Info.Version + "/" + plat)
+	r, err := u.fetch(u.DiffURL + url.QueryEscape(u.CmdName) + "/" + url.QueryEscape(u.CurrentVersion) + "/" + url.QueryEscape(u.Info.Version) + "/" + url.QueryEscape(plat))
 	if err != nil {
 		return nil, err
 	}
@@ -229,7 +230,7 @@ func (u *Updater) fetchAndVerifyFullBin() ([]byte, error) {
 }
 
 func (u *Updater) fetchBin() ([]byte, error) {
-	r, err := u.fetch(u.BinURL + u.CmdName + "/" + u.Info.Version + "/" + plat + ".gz")
+	r, err := u.fetch(u.BinURL + url.QueryEscape(u.CmdName) + "/" + url.QueryEscape(u.Info.Version) + "/" + url.QueryEscape(plat) + ".gz")
 	if err != nil {
 		return nil, err
 	}
