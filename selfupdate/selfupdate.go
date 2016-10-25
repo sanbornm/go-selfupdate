@@ -98,7 +98,10 @@ func (u *Updater) getExecRelativeDir(dir string) string {
 
 // BackgroundRun starts the update check and apply cycle.
 func (u *Updater) BackgroundRun() error {
-	os.MkdirAll(u.getExecRelativeDir(u.Dir), 0777)
+	if err := os.MkdirAll(u.getExecRelativeDir(u.Dir), 0777); err != nil {
+		// fail
+		return err
+	}
 	if u.wantUpdate() {
 		if err := up.CanUpdate(); err != nil {
 			// fail
