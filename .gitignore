@@ -12,3 +12,7 @@ syntax: glob
 *.log
 public/*
 go-selfupdate
+example/example-server
+example/hello-updater
+example/public/*
+example/deployment/*
