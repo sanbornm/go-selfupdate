@@ -11,7 +11,7 @@ syntax: glob
 *.db
 *.log
 public/*
-go-selfupdate
+go-selfupdate/go-selfupdate
 example/example-server
 example/hello-updater
 example/public/*
