@@ -35,7 +35,6 @@ import (
 	"io"
 	"io/ioutil"
 	"log"
-	"math/rand"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -49,12 +48,12 @@ import (
 
 const (
 	upcktimePath = "cktime"
-	plat         = runtime.GOOS + "-" + runtime.GOARCH
+	ourPlatform  = runtime.GOOS + "-" + runtime.GOARCH
 )
 
-const devValidTime = 7 * 24 * time.Hour
-
+// ErrHashMismatch returned whenever the new file's hash is mismatched after patch, indicating patch was unsuccesful.
 var ErrHashMismatch = errors.New("new file hash mismatch after patch")
+
 var up = update.New()
 var defaultHTTPRequester = HTTPRequester{}
 
@@ -99,23 +98,15 @@ func (u *Updater) getExecRelativeDir(dir string) string {
 // BackgroundRun starts the update check and apply cycle.
 func (u *Updater) BackgroundRun() error {
 	if err := os.MkdirAll(u.getExecRelativeDir(u.Dir), 0777); err != nil {
-		// fail
 		return err
 	}
+
 	if u.wantUpdate() {
 		if err := up.CanUpdate(); err != nil {
-			// fail
 			return err
 		}
-		//self, err := osext.Executable()
-		//if err != nil {
-		// fail update, couldn't figure out path to self
-		//return
-		//}
-		// TODO(bgentry): logger isn't on Windows. Replace w/ proper error reports.
-		if err := u.update(); err != nil {
-			return err
-		}
+
+		return u.update()
 	}
 	return nil
 }
@@ -125,7 +116,7 @@ func (u *Updater) wantUpdate() bool {
 	if u.CurrentVersion == "dev" || (!u.ForceCheck && readTime(path).After(time.Now())) {
 		return false
 	}
-	wait := 24*time.Hour + randDuration(24*time.Hour)
+	wait := 24 * time.Hour
 	return writeTime(path, time.Now().Add(wait))
 }
 
@@ -183,7 +174,7 @@ func (u *Updater) update() error {
 }
 
 func (u *Updater) fetchInfo() error {
-	r, err := u.fetch(u.ApiURL + url.QueryEscape(u.CmdName) + "/" + url.QueryEscape(plat) + ".json")
+	r, err := u.fetch(fmt.Sprintf("%s%s/%s.json", u.ApiURL, url.QueryEscape(u.CmdName), url.QueryEscape(ourPlatform)))
 	if err != nil {
 		return err
 	}
@@ -210,7 +201,7 @@ func (u *Updater) fetchAndVerifyPatch(old io.Reader) ([]byte, error) {
 }
 
 func (u *Updater) fetchAndApplyPatch(old io.Reader) ([]byte, error) {
-	r, err := u.fetch(u.DiffURL + url.QueryEscape(u.CmdName) + "/" + url.QueryEscape(u.CurrentVersion) + "/" + url.QueryEscape(u.Info.Version) + "/" + url.QueryEscape(plat))
+	r, err := u.fetch(u.DiffURL + url.QueryEscape(u.CmdName) + "/" + url.QueryEscape(u.CurrentVersion) + "/" + url.QueryEscape(u.Info.Version) + "/" + url.QueryEscape(ourPlatform))
 	if err != nil {
 		return nil, err
 	}
@@ -233,7 +224,8 @@ func (u *Updater) fetchAndVerifyFullBin() ([]byte, error) {
 }
 
 func (u *Updater) fetchBin() ([]byte, error) {
-	r, err := u.fetch(u.BinURL + url.QueryEscape(u.CmdName) + "/" + url.QueryEscape(u.Info.Version) + "/" + url.QueryEscape(plat) + ".gz")
+	// r, err := u.fetch(u.BinURL + url.QueryEscape(u.CmdName) + "/" + url.QueryEscape(u.Info.Version) + "/" + url.QueryEscape(plat) + ".gz")
+	r, err := u.fetch(fmt.Sprintf("%s%s/%s/%s.gz", u.BinURL, url.QueryEscape(u.CmdName), url.QueryEscape(u.Info.Version), url.QueryEscape(ourPlatform)))
 	if err != nil {
 		return nil, err
 	}
@@ -248,11 +240,6 @@ func (u *Updater) fetchBin() ([]byte, error) {
 	}
 
 	return buf.Bytes(), nil
-}
-
-// returns a random duration in [0,n).
-func randDuration(n time.Duration) time.Duration {
-	return time.Duration(rand.Int63n(int64(n)))
 }
 
 func (u *Updater) fetch(url string) (io.ReadCloser, error) {
@@ -272,19 +259,19 @@ func (u *Updater) fetch(url string) (io.ReadCloser, error) {
 	return readCloser, nil
 }
 
-func readTime(path string) time.Time {
+func readTime(path string) (time.Time, error) {
 	p, err := ioutil.ReadFile(path)
 	if os.IsNotExist(err) {
-		return time.Time{}
+		return time.Time{}, err
 	}
 	if err != nil {
-		return time.Now().Add(1000 * time.Hour)
+		return time.Time{}, err
 	}
 	t, err := time.Parse(time.RFC3339, string(p))
 	if err != nil {
-		return time.Now().Add(1000 * time.Hour)
+		return time.Time{}, err
 	}
-	return t
+	return t, nil
 }
 
 func verifySha(bin []byte, sha []byte) bool {
