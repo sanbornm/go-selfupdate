@@ -65,7 +65,9 @@ func createUpdater(mr *mockRequester) *Updater {
 		Dir:            "update/",
 		CmdName:        "myapp", // app name
 		Requester:      mr,
+		ForceCheck:     true,
 	}
+
 }
 
 func createUpdaterWithEscapedCharacters(mr *mockRequester) *Updater {
@@ -77,6 +79,7 @@ func createUpdaterWithEscapedCharacters(mr *mockRequester) *Updater {
 		Dir:            "update/",
 		CmdName:        "myapp+foo", // app name
 		Requester:      mr,
+		ForceCheck:     true,
 	}
 }
 

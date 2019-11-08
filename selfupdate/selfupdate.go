@@ -89,19 +89,36 @@ type Updater struct {
 	}
 }
 
-func (u *Updater) getExecRelativeDir(dir string) string {
-	filename, _ := osext.Executable()
-	path := filepath.Join(filepath.Dir(filename), dir)
-	return path
+func (u *Updater) getExecRelativeDir(dir string) (string, error) {
+	filename, err := osext.Executable()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(filepath.Dir(filename), dir), nil
 }
 
-// BackgroundRun starts the update check and apply cycle.
+// BackgroundRun first checks to see if it's time to check for updates. If it
+// is time to check for updates, it does that
 func (u *Updater) BackgroundRun() error {
-	if err := os.MkdirAll(u.getExecRelativeDir(u.Dir), 0777); err != nil {
+
+	path, err := u.getExecRelativeDir(u.Dir)
+
+	if err != nil {
 		return err
 	}
 
-	if u.wantUpdate() {
+	// Create folder for storing updates if it doesn't exist
+	if err := os.MkdirAll(path, 0777); err != nil {
+		return err
+	}
+
+	wantUpdate, err := u.wantUpdate()
+
+	if err != nil {
+		return err
+	}
+
+	if wantUpdate {
 		if err := up.CanUpdate(); err != nil {
 			return err
 		}
@@ -111,13 +128,33 @@ func (u *Updater) BackgroundRun() error {
 	return nil
 }
 
-func (u *Updater) wantUpdate() bool {
-	path := u.getExecRelativeDir(u.Dir + upcktimePath)
-	if u.CurrentVersion == "dev" || (!u.ForceCheck && readTime(path).After(time.Now())) {
-		return false
+func (u *Updater) wantUpdate() (bool, error) {
+
+	if u.CurrentVersion == "dev" {
+		return false, nil
 	}
+
+	path, err := u.getExecRelativeDir(u.Dir + upcktimePath)
+	if err != nil {
+		return false, err
+	}
+
 	wait := 24 * time.Hour
-	return writeTime(path, time.Now().Add(wait))
+
+	if u.ForceCheck {
+		return true, writeTime(path, time.Now().Add(wait))
+	}
+
+	timeToCheck, err := readTime(path)
+	if err != nil {
+		return false, err
+	}
+
+	if timeToCheck.After(time.Now()) {
+		return false, nil
+	}
+
+	return true, writeTime(path, time.Now().Add(wait))
 }
 
 func (u *Updater) update() error {
@@ -224,7 +261,6 @@ func (u *Updater) fetchAndVerifyFullBin() ([]byte, error) {
 }
 
 func (u *Updater) fetchBin() ([]byte, error) {
-	// r, err := u.fetch(u.BinURL + url.QueryEscape(u.CmdName) + "/" + url.QueryEscape(u.Info.Version) + "/" + url.QueryEscape(plat) + ".gz")
 	r, err := u.fetch(fmt.Sprintf("%s%s/%s/%s.gz", u.BinURL, url.QueryEscape(u.CmdName), url.QueryEscape(u.Info.Version), url.QueryEscape(ourPlatform)))
 	if err != nil {
 		return nil, err
@@ -280,6 +316,6 @@ func verifySha(bin []byte, sha []byte) bool {
 	return bytes.Equal(h.Sum(nil), sha)
 }
 
-func writeTime(path string, t time.Time) bool {
-	return ioutil.WriteFile(path, []byte(t.Format(time.RFC3339)), 0644) == nil
+func writeTime(path string, t time.Time) error {
+	return ioutil.WriteFile(path, []byte(t.Format(time.RFC3339)), 0644)
 }
