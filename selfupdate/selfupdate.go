@@ -83,10 +83,6 @@ type Updater struct {
 	Dir            string    // Directory to store selfupdate state.
 	ForceCheck     bool      // Check for update regardless of cktime timestamp
 	Requester      Requester //Optional parameter to override existing http request handler
-	Info           struct {
-		Version string
-		Sha256  []byte
-	}
 }
 
 func (u *Updater) getExecRelativeDir(dir string) (string, error) {
@@ -146,7 +142,7 @@ func (u *Updater) wantUpdate() (bool, error) {
 	}
 
 	timeToCheck, err := readTime(path)
-	if err != nil {
+	if !os.IsNotExist(err) {
 		return false, err
 	}
 
@@ -168,14 +164,17 @@ func (u *Updater) update() error {
 	}
 	defer old.Close()
 
-	err = u.fetchInfo()
+	info, err := u.fetchInfo()
 	if err != nil {
 		return err
 	}
-	if u.Info.Version == u.CurrentVersion {
+
+	// No need to update
+	if info.Version == u.CurrentVersion {
 		return nil
 	}
-	bin, err := u.fetchAndVerifyPatch(old)
+
+	bin, err := u.getExeWithPatchForVersion(old, info)
 	if err != nil {
 		if err == ErrHashMismatch {
 			log.Println("update: hash mismatch from patched binary")
@@ -185,7 +184,7 @@ func (u *Updater) update() error {
 			}
 		}
 
-		bin, err = u.fetchAndVerifyFullBin()
+		bin, err = u.getEntireBinaryForVersion(info)
 		if err != nil {
 			if err == ErrHashMismatch {
 				log.Println("update: hash mismatch from full binary")
@@ -204,64 +203,49 @@ func (u *Updater) update() error {
 	if errRecover != nil {
 		return fmt.Errorf("update and recovery errors: %q %q", err, errRecover)
 	}
-	if err != nil {
-		return err
-	}
-	return nil
+
+	return err
 }
 
-func (u *Updater) fetchInfo() error {
+func (u *Updater) fetchInfo() (VersionInfo, error) {
 	r, err := u.fetch(fmt.Sprintf("%s%s/%s.json", u.ApiURL, url.QueryEscape(u.CmdName), url.QueryEscape(ourPlatform)))
 	if err != nil {
-		return err
+		return VersionInfo{}, err
 	}
 	defer r.Close()
-	err = json.NewDecoder(r).Decode(&u.Info)
+
+	info := VersionInfo{}
+	err = json.NewDecoder(r).Decode(&info)
 	if err != nil {
-		return err
+		return VersionInfo{}, err
 	}
-	if len(u.Info.Sha256) != sha256.Size {
-		return errors.New("bad cmd hash in info")
+	if len(info.Sha256) != sha256.Size {
+		return VersionInfo{}, errors.New("bad cmd hash in info")
 	}
-	return nil
+	return info, nil
 }
 
-func (u *Updater) fetchAndVerifyPatch(old io.Reader) ([]byte, error) {
-	bin, err := u.fetchAndApplyPatch(old)
-	if err != nil {
-		return nil, err
-	}
-	if !verifySha(bin, u.Info.Sha256) {
-		return nil, ErrHashMismatch
-	}
-	return bin, nil
-}
-
-func (u *Updater) fetchAndApplyPatch(old io.Reader) ([]byte, error) {
-	r, err := u.fetch(u.DiffURL + url.QueryEscape(u.CmdName) + "/" + url.QueryEscape(u.CurrentVersion) + "/" + url.QueryEscape(u.Info.Version) + "/" + url.QueryEscape(ourPlatform))
+// getExeWithPatchForVersion retrives the patch for the current  version and
+// applies it to the current executable passed in, and returns the results
+func (u Updater) getExeWithPatchForVersion(old io.Reader, info VersionInfo) ([]byte, error) {
+	r, err := u.fetch(u.DiffURL + url.QueryEscape(u.CmdName) + "/" + url.QueryEscape(u.CurrentVersion) + "/" + url.QueryEscape(info.Version) + "/" + url.QueryEscape(ourPlatform))
 	if err != nil {
 		return nil, err
 	}
 	defer r.Close()
 	var buf bytes.Buffer
 	err = binarydist.Patch(old, &buf, r)
-	return buf.Bytes(), err
-}
+	bin := buf.Bytes()
 
-func (u *Updater) fetchAndVerifyFullBin() ([]byte, error) {
-	bin, err := u.fetchBin()
-	if err != nil {
-		return nil, err
-	}
-	verified := verifySha(bin, u.Info.Sha256)
-	if !verified {
+	if !verifySha(bin, info.Sha256) {
 		return nil, ErrHashMismatch
 	}
+
 	return bin, nil
 }
 
-func (u *Updater) fetchBin() ([]byte, error) {
-	r, err := u.fetch(fmt.Sprintf("%s%s/%s/%s.gz", u.BinURL, url.QueryEscape(u.CmdName), url.QueryEscape(u.Info.Version), url.QueryEscape(ourPlatform)))
+func (u Updater) getEntireBinaryForVersion(info VersionInfo) ([]byte, error) {
+	r, err := u.fetch(fmt.Sprintf("%s%s/%s/%s.gz", u.BinURL, url.QueryEscape(u.CmdName), url.QueryEscape(info.Version), url.QueryEscape(ourPlatform)))
 	if err != nil {
 		return nil, err
 	}
@@ -275,7 +259,13 @@ func (u *Updater) fetchBin() ([]byte, error) {
 		return nil, err
 	}
 
-	return buf.Bytes(), nil
+	bin := buf.Bytes()
+
+	if !verifySha(bin, info.Sha256) {
+		return nil, ErrHashMismatch
+	}
+
+	return bin, nil
 }
 
 func (u *Updater) fetch(url string) (io.ReadCloser, error) {
@@ -297,17 +287,10 @@ func (u *Updater) fetch(url string) (io.ReadCloser, error) {
 
 func readTime(path string) (time.Time, error) {
 	p, err := ioutil.ReadFile(path)
-	if os.IsNotExist(err) {
-		return time.Time{}, err
-	}
 	if err != nil {
 		return time.Time{}, err
 	}
-	t, err := time.Parse(time.RFC3339, string(p))
-	if err != nil {
-		return time.Time{}, err
-	}
-	return t, nil
+	return time.Parse(time.RFC3339, string(p))
 }
 
 func verifySha(bin []byte, sha []byte) bool {

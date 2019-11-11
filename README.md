@@ -61,3 +61,7 @@ If you are using [goxc](https://github.com/laher/goxc) you can output the files 
 ```text
 "OutPath": "{{.Dest}}{{.PS}}{{.Version}}{{.PS}}{{.Os}}-{{.Arch}}",
 ```
+
+## Development
+
+Uses mockgen to generate mocks for our interfaces.
