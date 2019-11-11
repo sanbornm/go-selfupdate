@@ -1,4 +1,4 @@
-// Update protocol:
+// Package selfupdate update protocol:
 //
 //   GET hk.heroku.com/hk/linux-amd64.json
 //
