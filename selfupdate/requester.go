@@ -21,7 +21,7 @@ type HTTPRequester struct {
 
 // Fetch will return an HTTP request to the specified url and return
 // the body of the result. An error will occur for a non 200 status code.
-func (httpRequester *HTTPRequester) Fetch(url string) (io.ReadCloser, error) {
+func (httpRequester HTTPRequester) Fetch(url string) (io.ReadCloser, error) {
 	resp, err := http.Get(url)
 	if err != nil {
 		return nil, err

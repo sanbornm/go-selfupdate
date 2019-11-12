@@ -33,29 +33,23 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"net/url"
 	"os"
-	"path/filepath"
 	"runtime"
-	"time"
 
-	"github.com/kardianos/osext"
 	"github.com/kr/binarydist"
 	"gopkg.in/inconshreveable/go-update.v0"
 )
 
 const (
-	upcktimePath = "cktime"
-	ourPlatform  = runtime.GOOS + "-" + runtime.GOARCH
+	ourPlatform = runtime.GOOS + "-" + runtime.GOARCH
 )
 
 // ErrHashMismatch returned whenever the new file's hash is mismatched after patch, indicating patch was unsuccesful.
 var ErrHashMismatch = errors.New("new file hash mismatch after patch")
 
 var up = update.New()
-var defaultHTTPRequester = HTTPRequester{}
 
 // Updater is the configuration and runtime data for doing an update.
 //
@@ -63,41 +57,50 @@ var defaultHTTPRequester = HTTPRequester{}
 //
 // Example:
 //
+// ```golang
 //  updater := &selfupdate.Updater{
 //  	CurrentVersion: version,
 //  	ApiURL:         "http://updates.yourdomain.com/",
 //  	BinURL:         "http://updates.yourdownmain.com/",
 //  	DiffURL:        "http://updates.yourdomain.com/",
-//  	Dir:            "update/",
+//  	CacheDir:            "update",
 //  	CmdName:        "myapp", // app name
 //  }
 //  if updater != nil {
 //  	go updater.BackgroundRun()
 //  }
+// ```
 type Updater struct {
-	CurrentVersion string    // Currently running version.
-	ApiURL         string    // Base URL for API requests (json files).
-	CmdName        string    // Command name is appended to the ApiURL like http://apiurl/CmdName/. This represents one binary.
-	BinURL         string    // Base URL for full binary downloads.
-	DiffURL        string    // Base URL for diff downloads.
-	Dir            string    // Directory to store selfupdate state.
-	ForceCheck     bool      // Check for update regardless of cktime timestamp
-	Requester      Requester //Optional parameter to override existing http request handler
+	currentVersion     string            // Currently running version.
+	apiURL             string            // Base URL for API requests (json files).
+	cmdName            string            // Command name is appended to the ApiURL like http://apiurl/CmdName/. This represents one binary.
+	binURL             string            // Base URL for full binary downloads.
+	diffURL            string            // Base URL for diff downloads.
+	cacheDir           string            // Directory to store selfupdate state.
+	forceCheck         bool              // Check for update regardless of cktime timestamp
+	requester          Requester         // Optional parameter to override existing http request handler
+	updateableResolver UpdatableResolver // Finds the thing that needs to be updated
 }
 
-func (u *Updater) getExecRelativeDir(dir string) (string, error) {
-	filename, err := osext.Executable()
-	if err != nil {
-		return "", err
+// NewUpdater creates a new updater
+func NewUpdater(currentVersion string, updateDataURL string) Updater {
+	return Updater{
+		currentVersion:     currentVersion,
+		apiURL:             updateDataURL,
+		binURL:             updateDataURL,
+		diffURL:            updateDataURL,
+		cacheDir:           "update",
+		forceCheck:         false,
+		requester:          HTTPRequester{},
+		updateableResolver: CurrentExeUpdatableResolver{},
 	}
-	return filepath.Join(filepath.Dir(filename), dir), nil
 }
 
-// BackgroundRun first checks to see if it's time to check for updates. If it
-// is time to check for updates, it does that
-func (u *Updater) BackgroundRun() error {
+// Run attempts to grab the latest version information and then applies
+// the new patch if their is an update.
+func (u *Updater) Run() error {
 
-	path, err := u.getExecRelativeDir(u.Dir)
+	path, err := getExecRelativeDir(u.cacheDir)
 
 	if err != nil {
 		return err
@@ -108,61 +111,16 @@ func (u *Updater) BackgroundRun() error {
 		return err
 	}
 
-	wantUpdate, err := u.wantUpdate()
-
-	if err != nil {
+	if err := up.CanUpdate(); err != nil {
 		return err
 	}
 
-	if wantUpdate {
-		if err := up.CanUpdate(); err != nil {
-			return err
-		}
-
-		return u.update()
-	}
-	return nil
-}
-
-func (u *Updater) wantUpdate() (bool, error) {
-
-	if u.CurrentVersion == "dev" {
-		return false, nil
-	}
-
-	path, err := u.getExecRelativeDir(u.Dir + upcktimePath)
-	if err != nil {
-		return false, err
-	}
-
-	wait := 24 * time.Hour
-
-	if u.ForceCheck {
-		return true, writeTime(path, time.Now().Add(wait))
-	}
-
-	timeToCheck, err := readTime(path)
-	if !os.IsNotExist(err) {
-		return false, err
-	}
-
-	if timeToCheck.After(time.Now()) {
-		return false, nil
-	}
-
-	return true, writeTime(path, time.Now().Add(wait))
+	return u.update()
 }
 
 func (u *Updater) update() error {
-	path, err := osext.Executable()
-	if err != nil {
-		return err
-	}
-	old, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	defer old.Close()
+
+	old, err := u.updateableResolver.Resolve()
 
 	info, err := u.fetchInfo()
 	if err != nil {
@@ -170,7 +128,7 @@ func (u *Updater) update() error {
 	}
 
 	// No need to update
-	if info.Version == u.CurrentVersion {
+	if info.Version == u.currentVersion {
 		return nil
 	}
 
@@ -179,7 +137,7 @@ func (u *Updater) update() error {
 		if err == ErrHashMismatch {
 			log.Println("update: hash mismatch from patched binary")
 		} else {
-			if u.DiffURL != "" {
+			if u.diffURL != "" {
 				log.Println("update: patching binary,", err)
 			}
 		}
@@ -207,28 +165,28 @@ func (u *Updater) update() error {
 	return err
 }
 
-func (u *Updater) fetchInfo() (VersionInfo, error) {
-	r, err := u.fetch(fmt.Sprintf("%s%s/%s.json", u.ApiURL, url.QueryEscape(u.CmdName), url.QueryEscape(ourPlatform)))
+func (u *Updater) fetchInfo() (versionInfo, error) {
+	r, err := u.fetch(fmt.Sprintf("%s%s/%s.json", u.apiURL, url.QueryEscape(u.cmdName), url.QueryEscape(ourPlatform)))
 	if err != nil {
-		return VersionInfo{}, err
+		return versionInfo{}, err
 	}
 	defer r.Close()
 
-	info := VersionInfo{}
+	info := versionInfo{}
 	err = json.NewDecoder(r).Decode(&info)
 	if err != nil {
-		return VersionInfo{}, err
+		return versionInfo{}, err
 	}
 	if len(info.Sha256) != sha256.Size {
-		return VersionInfo{}, errors.New("bad cmd hash in info")
+		return versionInfo{}, errors.New("bad cmd hash in info")
 	}
 	return info, nil
 }
 
 // getExeWithPatchForVersion retrives the patch for the current  version and
 // applies it to the current executable passed in, and returns the results
-func (u Updater) getExeWithPatchForVersion(old io.Reader, info VersionInfo) ([]byte, error) {
-	r, err := u.fetch(u.DiffURL + url.QueryEscape(u.CmdName) + "/" + url.QueryEscape(u.CurrentVersion) + "/" + url.QueryEscape(info.Version) + "/" + url.QueryEscape(ourPlatform))
+func (u Updater) getExeWithPatchForVersion(old io.Reader, info versionInfo) ([]byte, error) {
+	r, err := u.fetch(u.diffURL + url.QueryEscape(u.cmdName) + "/" + url.QueryEscape(u.currentVersion) + "/" + url.QueryEscape(info.Version) + "/" + url.QueryEscape(ourPlatform))
 	if err != nil {
 		return nil, err
 	}
@@ -244,8 +202,8 @@ func (u Updater) getExeWithPatchForVersion(old io.Reader, info VersionInfo) ([]b
 	return bin, nil
 }
 
-func (u Updater) getEntireBinaryForVersion(info VersionInfo) ([]byte, error) {
-	r, err := u.fetch(fmt.Sprintf("%s%s/%s/%s.gz", u.BinURL, url.QueryEscape(u.CmdName), url.QueryEscape(info.Version), url.QueryEscape(ourPlatform)))
+func (u Updater) getEntireBinaryForVersion(info versionInfo) ([]byte, error) {
+	r, err := u.fetch(fmt.Sprintf("%s%s/%s/%s.gz", u.binURL, url.QueryEscape(u.cmdName), url.QueryEscape(info.Version), url.QueryEscape(ourPlatform)))
 	if err != nil {
 		return nil, err
 	}
@@ -268,12 +226,12 @@ func (u Updater) getEntireBinaryForVersion(info VersionInfo) ([]byte, error) {
 	return bin, nil
 }
 
-func (u *Updater) fetch(url string) (io.ReadCloser, error) {
-	if u.Requester == nil {
-		return defaultHTTPRequester.Fetch(url)
+func (u Updater) fetch(url string) (io.ReadCloser, error) {
+	if u.requester == nil {
+		return nil, errors.New("unable to fetch information with nil requester")
 	}
 
-	readCloser, err := u.Requester.Fetch(url)
+	readCloser, err := u.requester.Fetch(url)
 	if err != nil {
 		return nil, err
 	}
@@ -283,22 +241,4 @@ func (u *Updater) fetch(url string) (io.ReadCloser, error) {
 	}
 
 	return readCloser, nil
-}
-
-func readTime(path string) (time.Time, error) {
-	p, err := ioutil.ReadFile(path)
-	if err != nil {
-		return time.Time{}, err
-	}
-	return time.Parse(time.RFC3339, string(p))
-}
-
-func verifySha(bin []byte, sha []byte) bool {
-	h := sha256.New()
-	h.Write(bin)
-	return bytes.Equal(h.Sum(nil), sha)
-}
-
-func writeTime(path string, t time.Time) error {
-	return ioutil.WriteFile(path, []byte(t.Format(time.RFC3339)), 0644)
 }

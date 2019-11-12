@@ -5,6 +5,8 @@
 
 Enable your Golang applications to self update.  Inspired by Chrome based on Heroku's [hk](https://github.com/heroku/hk).
 
+Requires Golang 1.8 or higher.
+
 ## Features
 
 * Tested on Mac, Linux, Arm, and Windows
@@ -15,7 +17,7 @@ Enable your Golang applications to self update.  Inspired by Chrome based on Her
 
 ### Install library and update/patch creation utility
 
-`go get -u github.com/sanbornm/go-selfupdate/...`
+`go get -u github.com/EliCDavis/go-selfupdate/...`
 
 ### Enable your App to Self Update
 
@@ -25,7 +27,7 @@ var updater = &selfupdate.Updater{
     ApiURL:         "http://updates.yourdomain.com/",
     BinURL:         "http://updates.yourdomain.com/",
     DiffURL:        "http://updates.yourdomain.com/",
-    Dir:            "update/",
+    CacheDir:       "update",
     CmdName:        "myapp", // app name
 }
 
@@ -64,4 +66,8 @@ If you are using [goxc](https://github.com/laher/goxc) you can output the files 
 
 ## Development
 
-Uses mockgen to generate mocks for our interfaces.
+Uses mockgen to generate mocks for our interfaces. If you make any changes to any of the interface signatures, you'll need to update the mocks using the command:
+
+```bash
+go generate ./...
+```
