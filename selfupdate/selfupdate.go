@@ -49,8 +49,6 @@ const (
 // ErrHashMismatch returned whenever the new file's hash is mismatched after patch, indicating patch was unsuccesful.
 var ErrHashMismatch = errors.New("new file hash mismatch after patch")
 
-var up = update.New()
-
 // Updater is the configuration and runtime data for doing an update.
 //
 // Note that ApiURL, BinURL and DiffURL should have the same value if all files are available at the same location.
@@ -77,7 +75,6 @@ type Updater struct {
 	binURL             string            // Base URL for full binary downloads.
 	diffURL            string            // Base URL for diff downloads.
 	cacheDir           string            // Directory to store selfupdate state.
-	forceCheck         bool              // Check for update regardless of cktime timestamp
 	requester          Requester         // Optional parameter to override existing http request handler
 	updateableResolver UpdatableResolver // Finds the thing that needs to be updated
 }
@@ -90,46 +87,60 @@ func NewUpdater(currentVersion string, updateDataURL string) Updater {
 		binURL:             updateDataURL,
 		diffURL:            updateDataURL,
 		cacheDir:           "update",
-		forceCheck:         false,
 		requester:          HTTPRequester{},
 		updateableResolver: CurrentExeUpdatableResolver{},
 	}
 }
 
-// Run attempts to grab the latest version information and then applies
-// the new patch if their is an update.
-func (u *Updater) Run() error {
+func (u Updater) UpdateAvailable() (bool, error) {
+	return true, nil
+}
+
+// Run attempts to grab the latest version information and then applies the
+// new patch if their is an update. If an update did occur, then we return
+// true. If we did not update (already up to date) then we return false.
+func (u Updater) Run() (updated bool, err error) {
 
 	path, err := getExecRelativeDir(u.cacheDir)
 
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	// Create folder for storing updates if it doesn't exist
 	if err := os.MkdirAll(path, 0777); err != nil {
-		return err
-	}
-
-	if err := up.CanUpdate(); err != nil {
-		return err
+		return false, err
 	}
 
 	return u.update()
 }
 
-func (u *Updater) update() error {
-
-	old, err := u.updateableResolver.Resolve()
+func (u *Updater) update() (bool, error) {
 
 	info, err := u.fetchInfo()
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	// No need to update
 	if info.Version == u.currentVersion {
-		return nil
+		return false, nil
+	}
+
+	oldPath, err := u.updateableResolver.Resolve()
+	if err != nil {
+		return false, err
+	}
+
+	up := update.New()
+
+	if err := up.CanUpdate(); err != nil {
+		return false, err
+	}
+
+	old, err := os.Open(oldPath)
+	if err != nil {
+		return false, err
 	}
 
 	bin, err := u.getExeWithPatchForVersion(old, info)
@@ -149,7 +160,7 @@ func (u *Updater) update() error {
 			} else {
 				log.Println("update: fetching full binary,", err)
 			}
-			return err
+			return false, err
 		}
 	}
 
@@ -159,10 +170,14 @@ func (u *Updater) update() error {
 
 	err, errRecover := up.FromStream(bytes.NewBuffer(bin))
 	if errRecover != nil {
-		return fmt.Errorf("update and recovery errors: %q %q", err, errRecover)
+		return false, fmt.Errorf("update and recovery errors: %q %q", err, errRecover)
 	}
 
-	return err
+	if err != nil {
+		return false, err
+	}
+
+	return true, nil
 }
 
 func (u *Updater) fetchInfo() (versionInfo, error) {

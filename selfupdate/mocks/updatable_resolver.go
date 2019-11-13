@@ -6,7 +6,6 @@ package mocks
 
 import (
 	gomock "github.com/golang/mock/gomock"
-	io "io"
 	reflect "reflect"
 )
 
@@ -34,10 +33,10 @@ func (m *MockUpdatableResolver) EXPECT() *MockUpdatableResolverMockRecorder {
 }
 
 // Resolve mocks base method
-func (m *MockUpdatableResolver) Resolve() (io.ReadCloser, error) {
+func (m *MockUpdatableResolver) Resolve() (string, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Resolve")
-	ret0, _ := ret[0].(io.ReadCloser)
+	ret0, _ := ret[0].(string)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }

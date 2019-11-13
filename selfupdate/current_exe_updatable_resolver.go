@@ -1,22 +1,15 @@
 package selfupdate
 
 import (
-	"io"
 	"os"
 )
 
+// CurrentExeUpdatableResolver resolves the thing to be updated as the current
+// executable running this program
 type CurrentExeUpdatableResolver struct {
 }
 
-func (c CurrentExeUpdatableResolver) Resolve() (io.ReadCloser, error) {
-	path, err := os.Executable()
-	if err != nil {
-		return nil, err
-	}
-	old, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-
-	return old, nil
+// Resolve attempts to find the current executable running this program
+func (c CurrentExeUpdatableResolver) Resolve() (string, error) {
+	return os.Executable()
 }

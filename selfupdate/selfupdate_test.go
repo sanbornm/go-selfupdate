@@ -8,6 +8,8 @@ import (
 	"runtime"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/EliCDavis/go-selfupdate/selfupdate/mocks"
 
 	"github.com/golang/mock/gomock"
@@ -23,6 +25,7 @@ func createTestVersionInfo(version string) string {
 }
 
 func TestUpdaterFetchMustReturnNonNilReaderCloser(t *testing.T) {
+	// ******************************* ARRANGE ********************************
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 	mr := mocks.NewMockRequester(ctrl)
@@ -30,30 +33,35 @@ func TestUpdaterFetchMustReturnNonNilReaderCloser(t *testing.T) {
 		Fetch("http://updates.yourdomain.com/myapp/"+runtime.GOOS+"-"+runtime.GOARCH+".json").
 		Return(nil, nil)
 
-	updater := createUpdater(mr)
-	err := updater.Run()
-	if err != nil {
-		equals(t, "Fetch was expected to return non-nil ReadCloser", err.Error())
-	} else {
-		t.Log("Expected an error")
-		t.Fail()
-	}
+	updater := createUpdater(mr, nil)
+
+	// ********************************* ACT **********************************
+	updated, err := updater.Run()
+
+	// ******************************** ASSERT ********************************
+	assert.Error(t, err, "Fetch was expected to return non-nil ReadCloser")
+	assert.False(t, updated, "No update should have occured")
 }
 
-func TestUpdaterWithEmptyPayloadNoErrorNoUpdate(t *testing.T) {
+func TestUpdaterNoUpdateOccursIfAtLatestVersion(t *testing.T) {
+	// ******************************* ARRANGE ********************************
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
+
+	// Handle http requests
 	mr := mocks.NewMockRequester(ctrl)
 	mr.EXPECT().
 		Fetch("http://updates.yourdomain.com/myapp/"+runtime.GOOS+"-"+runtime.GOARCH+".json").
 		Return(newTestReaderCloser(createTestVersionInfo("1.2")), nil)
 
-	updater := createUpdater(mr)
+	updater := createUpdater(mr, nil)
 
-	err := updater.Run()
-	if err != nil {
-		t.Errorf("Error occurred: %#v", err)
-	}
+	// ********************************* ACT **********************************
+	updated, err := updater.Run()
+
+	// ******************************** ASSERT ********************************
+	assert.NoError(t, err)
+	assert.False(t, updated, "No update should have occured")
 }
 
 // func TestUpdaterWithEmptyPayloadNoErrorNoUpdateEscapedPath(t *testing.T) {
@@ -72,27 +80,29 @@ func TestUpdaterWithEmptyPayloadNoErrorNoUpdate(t *testing.T) {
 // 	}
 // }
 
-func createUpdater(mr Requester) *Updater {
+func createUpdater(mr Requester, resolver UpdatableResolver) *Updater {
 	return &Updater{
-		currentVersion: "1.2",
-		apiURL:         "http://updates.yourdomain.com/",
-		binURL:         "http://updates.yourdomain.com/",
-		diffURL:        "http://updates.yourdomain.com/",
-		cacheDir:       "update",
-		cmdName:        "myapp",
-		requester:      mr,
+		currentVersion:     "1.2",
+		apiURL:             "http://updates.yourdomain.com/",
+		binURL:             "http://updates.yourdomain.com/",
+		diffURL:            "http://updates.yourdomain.com/",
+		cacheDir:           "update",
+		cmdName:            "myapp",
+		requester:          mr,
+		updateableResolver: resolver,
 	}
 }
 
-func createUpdaterWithEscapedCharacters(mr Requester) *Updater {
+func createUpdaterWithEscapedCharacters(mr Requester, resolver UpdatableResolver) *Updater {
 	return &Updater{
-		currentVersion: "1.2+foobar",
-		apiURL:         "http://updates.yourdomain.com/",
-		binURL:         "http://updates.yourdomain.com/",
-		diffURL:        "http://updates.yourdomain.com/",
-		cacheDir:       "update",
-		cmdName:        "myapp+foo",
-		requester:      mr,
+		currentVersion:     "1.2+foobar",
+		apiURL:             "http://updates.yourdomain.com/",
+		binURL:             "http://updates.yourdomain.com/",
+		diffURL:            "http://updates.yourdomain.com/",
+		cacheDir:           "update",
+		cmdName:            "myapp+foo",
+		requester:          mr,
+		updateableResolver: resolver,
 	}
 }
 
