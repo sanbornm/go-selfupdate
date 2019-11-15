@@ -36,14 +36,9 @@ import (
 	"log"
 	"net/url"
 	"os"
-	"runtime"
 
 	"github.com/kr/binarydist"
 	"gopkg.in/inconshreveable/go-update.v0"
-)
-
-const (
-	ourPlatform = runtime.GOOS + "-" + runtime.GOARCH
 )
 
 // ErrHashMismatch returned whenever the new file's hash is mismatched after patch, indicating patch was unsuccesful.
@@ -77,9 +72,11 @@ type Updater struct {
 	cacheDir           string            // Directory to store selfupdate state.
 	requester          Requester         // Optional parameter to override existing http request handler
 	updateableResolver UpdatableResolver // Finds the thing that needs to be updated
+	platformResolver   PlatformResolver  // Figures out what platform we need to update for
 }
 
-// NewUpdater creates a new updater
+// NewUpdater creates a new updater with defaults that we're updating this
+// executable and it's going to be for the current OS and Architecture
 func NewUpdater(currentVersion string, updateDataURL string) Updater {
 	return Updater{
 		currentVersion:     currentVersion,
@@ -89,6 +86,7 @@ func NewUpdater(currentVersion string, updateDataURL string) Updater {
 		cacheDir:           "update",
 		requester:          HTTPRequester{},
 		updateableResolver: CurrentExeUpdatableResolver{},
+		platformResolver:   CurrentPlatformResolver{},
 	}
 }
 
@@ -153,6 +151,8 @@ func (u *Updater) update() (bool, error) {
 			}
 		}
 
+		return false, err
+
 		bin, err = u.getEntireBinaryForVersion(info)
 		if err != nil {
 			if err == ErrHashMismatch {
@@ -181,7 +181,16 @@ func (u *Updater) update() (bool, error) {
 }
 
 func (u *Updater) fetchInfo() (versionInfo, error) {
-	r, err := u.fetch(fmt.Sprintf("%s%s/%s.json", u.apiURL, url.QueryEscape(u.cmdName), url.QueryEscape(ourPlatform)))
+	if u.platformResolver == nil {
+		return versionInfo{}, errors.New("Unable to reolve platform because resolver is nil")
+	}
+
+	platformToUpdate, err := u.platformResolver.Resolve()
+	if err != nil {
+		return versionInfo{}, err
+	}
+
+	r, err := u.fetch(fmt.Sprintf("%s%s/%s.json", u.apiURL, url.QueryEscape(u.cmdName), url.QueryEscape(platformToUpdate)))
 	if err != nil {
 		return versionInfo{}, err
 	}
@@ -193,7 +202,7 @@ func (u *Updater) fetchInfo() (versionInfo, error) {
 		return versionInfo{}, err
 	}
 	if len(info.Sha256) != sha256.Size {
-		return versionInfo{}, errors.New("bad cmd hash in info")
+		return versionInfo{}, errors.New("bad hash in info")
 	}
 	return info, nil
 }
@@ -201,14 +210,27 @@ func (u *Updater) fetchInfo() (versionInfo, error) {
 // getExeWithPatchForVersion retrives the patch for the current  version and
 // applies it to the current executable passed in, and returns the results
 func (u Updater) getExeWithPatchForVersion(old io.Reader, info versionInfo) ([]byte, error) {
-	r, err := u.fetch(u.diffURL + url.QueryEscape(u.cmdName) + "/" + url.QueryEscape(u.currentVersion) + "/" + url.QueryEscape(info.Version) + "/" + url.QueryEscape(ourPlatform))
+
+	platformToUpdate, err := u.platformResolver.Resolve()
+	if err != nil {
+		return nil, err
+	}
+
+	r, err := u.fetch(u.diffURL + url.QueryEscape(u.cmdName) + "/" + url.QueryEscape(u.currentVersion) + "/" + url.QueryEscape(info.Version) + "/" + url.QueryEscape(platformToUpdate))
 	if err != nil {
 		return nil, err
 	}
 	defer r.Close()
 	var buf bytes.Buffer
 	err = binarydist.Patch(old, &buf, r)
+	if err != nil {
+		return nil, err
+	}
+
 	bin := buf.Bytes()
+	log.Printf("bytes: %d", len(bin))
+
+	// ioutil.WriteFile("patched.exe", bin, 0777)
 
 	if !verifySha(bin, info.Sha256) {
 		return nil, ErrHashMismatch
@@ -218,7 +240,13 @@ func (u Updater) getExeWithPatchForVersion(old io.Reader, info versionInfo) ([]b
 }
 
 func (u Updater) getEntireBinaryForVersion(info versionInfo) ([]byte, error) {
-	r, err := u.fetch(fmt.Sprintf("%s%s/%s/%s.gz", u.binURL, url.QueryEscape(u.cmdName), url.QueryEscape(info.Version), url.QueryEscape(ourPlatform)))
+
+	platformToUpdate, err := u.platformResolver.Resolve()
+	if err != nil {
+		return nil, err
+	}
+
+	r, err := u.fetch(fmt.Sprintf("%s%s/%s/%s.gz", u.binURL, url.QueryEscape(u.cmdName), url.QueryEscape(info.Version), url.QueryEscape(platformToUpdate)))
 	if err != nil {
 		return nil, err
 	}

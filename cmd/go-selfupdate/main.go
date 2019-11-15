@@ -44,7 +44,10 @@ func (g *gzReader) Read(p []byte) (int, error) {
 }
 
 func (g *gzReader) Close() error {
-	g.z.Close()
+	err := g.z.Close()
+	if err != nil {
+		return err
+	}
 	return g.r.Close()
 }
 
@@ -60,7 +63,10 @@ func newGzReader(r io.ReadCloser) io.ReadCloser {
 }
 
 func createUpdate(path string, platform string) {
-	c := current{Version: version, Sha256: generateSha256(path)}
+	c := current{
+		Version: version,
+		Sha256:  generateSha256(path),
+	}
 
 	b, err := json.MarshalIndent(c, "", "    ")
 	if err != nil {
@@ -100,9 +106,13 @@ func createUpdate(path string, platform string) {
 
 		fName := filepath.Join(genDir, file.Name(), platform+".gz")
 		old, err := os.Open(fName)
-		if err != nil {
+		if err == os.ErrNotExist {
 			// Don't have an old release for this os/arch, continue on
 			continue
+		}
+
+		if err != nil {
+			panic(err)
 		}
 
 		fName = filepath.Join(genDir, version, platform+".gz")
@@ -120,7 +130,10 @@ func createUpdate(path string, platform string) {
 		if err := binarydist.Diff(ar, br, patch); err != nil {
 			panic(err)
 		}
-		ioutil.WriteFile(filepath.Join(genDir, file.Name(), version, platform), patch.Bytes(), 0755)
+		err = ioutil.WriteFile(filepath.Join(genDir, file.Name(), version, platform), patch.Bytes(), 0755)
+		if err != nil {
+			panic(err)
+		}
 	}
 }
 
@@ -138,14 +151,13 @@ func createBuildDir() {
 func main() {
 	outputDirFlag := flag.String("o", "public", "Output directory for writing updates")
 
-	var defaultPlatform string
+	defaultPlatform := runtime.GOOS + "-" + runtime.GOARCH
 	goos := os.Getenv("GOOS")
 	goarch := os.Getenv("GOARCH")
 	if goos != "" && goarch != "" {
 		defaultPlatform = goos + "-" + goarch
-	} else {
-		defaultPlatform = runtime.GOOS + "-" + runtime.GOARCH
 	}
+
 	platformFlag := flag.String("platform", defaultPlatform,
 		"Target platform in the form OS-ARCH. Defaults to running os/arch or the combination of the environment variables GOOS and GOARCH if both are set.")
 
