@@ -5,6 +5,9 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"io"
+	"io/ioutil"
+	"log"
+	"os"
 	"runtime"
 	"testing"
 
@@ -16,6 +19,23 @@ import (
 )
 
 var testHash = sha256.New()
+
+func cpFileAsTemp(fileToCopy, newFlieName string) *os.File {
+	content := []byte("temporary file's content")
+	tmpfile, err := ioutil.TempFile("", newFlieName)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	if _, err := tmpfile.Write(content); err != nil {
+		log.Fatal(err)
+	}
+	if err := tmpfile.Close(); err != nil {
+		log.Fatal(err)
+	}
+
+	return tmpfile
+}
 
 func createTestVersionInfo(version string) string {
 	return fmt.Sprintf(`{
@@ -33,7 +53,7 @@ func TestUpdaterFetchMustReturnNonNilReaderCloser(t *testing.T) {
 		Fetch("http://updates.yourdomain.com/myapp/"+runtime.GOOS+"-"+runtime.GOARCH+".json").
 		Return(nil, nil)
 
-	updater := createUpdater(mr, nil)
+	updater := createUpdater("", mr, nil)
 
 	// ********************************* ACT **********************************
 	updated, err := updater.Run()
@@ -54,7 +74,40 @@ func TestUpdaterNoUpdateOccursIfAtLatestVersion(t *testing.T) {
 		Fetch("http://updates.yourdomain.com/myapp/"+runtime.GOOS+"-"+runtime.GOARCH+".json").
 		Return(newTestReaderCloser(createTestVersionInfo("1.2")), nil)
 
-	updater := createUpdater(mr, nil)
+	updater := createUpdater("1.2", mr, nil)
+
+	// ********************************* ACT **********************************
+	updated, err := updater.Run()
+
+	// ******************************** ASSERT ********************************
+	assert.NoError(t, err)
+	assert.False(t, updated, "No update should have occured")
+}
+
+func TestUpdaterPatchesBinariesWhenVersionsDiffer(t *testing.T) {
+	// ******************************* ARRANGE ********************************
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	// Handle http requests
+	mr := mocks.NewMockRequester(ctrl) // http://updates.yourdomain.com/myapp/1.2/1.3/windows-amd64
+	mr.EXPECT().
+		Fetch("http://updates.yourdomain.com/myapp/"+runtime.GOOS+"-"+runtime.GOARCH+".json").
+		Return(newTestReaderCloser(createTestVersionInfo("1.3")), nil)
+
+	mr.EXPECT().
+		Fetch("http://updates.yourdomain.com/myapp/1.2/1.3/" + runtime.GOOS + "-" + runtime.GOARCH).
+		Return()
+
+	f := cpFileAsTemp("golden_data/main-before.exe", "toUpdate")
+	defer os.Remove(f.Name()) // clean up
+
+	resolver := mocks.NewMockUpdatableResolver(ctrl)
+	resolver.EXPECT().
+		Resolve().
+		Return(f.Name(), nil)
+
+	updater := createUpdater("1.1", mr, resolver)
 
 	// ********************************* ACT **********************************
 	updated, err := updater.Run()
@@ -80,9 +133,9 @@ func TestUpdaterNoUpdateOccursIfAtLatestVersion(t *testing.T) {
 // 	}
 // }
 
-func createUpdater(mr Requester, resolver UpdatableResolver) *Updater {
+func createUpdater(version string, mr Requester, resolver UpdatableResolver) *Updater {
 	return &Updater{
-		currentVersion:     "1.2",
+		currentVersion:     version,
 		apiURL:             "http://updates.yourdomain.com/",
 		binURL:             "http://updates.yourdomain.com/",
 		diffURL:            "http://updates.yourdomain.com/",

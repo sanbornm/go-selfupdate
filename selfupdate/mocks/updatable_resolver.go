@@ -34,7 +34,6 @@ func (m *MockUpdatableResolver) EXPECT() *MockUpdatableResolverMockRecorder {
 
 // Resolve mocks base method
 func (m *MockUpdatableResolver) Resolve() (string, error) {
-	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Resolve")
 	ret0, _ := ret[0].(string)
 	ret1, _ := ret[1].(error)
@@ -43,6 +42,5 @@ func (m *MockUpdatableResolver) Resolve() (string, error) {
 
 // Resolve indicates an expected call of Resolve
 func (mr *MockUpdatableResolverMockRecorder) Resolve() *gomock.Call {
-	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Resolve", reflect.TypeOf((*MockUpdatableResolver)(nil).Resolve))
 }

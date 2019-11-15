@@ -35,7 +35,6 @@ func (m *MockCheckForUpdatesSchedule) EXPECT() *MockCheckForUpdatesScheduleMockR
 
 // ShouldCheckForUpdate mocks base method
 func (m *MockCheckForUpdatesSchedule) ShouldCheckForUpdate(currentTime time.Time) (bool, error) {
-	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "ShouldCheckForUpdate", currentTime)
 	ret0, _ := ret[0].(bool)
 	ret1, _ := ret[1].(error)
@@ -44,13 +43,11 @@ func (m *MockCheckForUpdatesSchedule) ShouldCheckForUpdate(currentTime time.Time
 
 // ShouldCheckForUpdate indicates an expected call of ShouldCheckForUpdate
 func (mr *MockCheckForUpdatesScheduleMockRecorder) ShouldCheckForUpdate(currentTime interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ShouldCheckForUpdate", reflect.TypeOf((*MockCheckForUpdatesSchedule)(nil).ShouldCheckForUpdate), currentTime)
 }
 
 // UpdatesChecked mocks base method
 func (m *MockCheckForUpdatesSchedule) UpdatesChecked(timeUpdatesWhereChecked time.Time) error {
-	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "UpdatesChecked", timeUpdatesWhereChecked)
 	ret0, _ := ret[0].(error)
 	return ret0
@@ -58,6 +55,5 @@ func (m *MockCheckForUpdatesSchedule) UpdatesChecked(timeUpdatesWhereChecked tim
 
 // UpdatesChecked indicates an expected call of UpdatesChecked
 func (mr *MockCheckForUpdatesScheduleMockRecorder) UpdatesChecked(timeUpdatesWhereChecked interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdatesChecked", reflect.TypeOf((*MockCheckForUpdatesSchedule)(nil).UpdatesChecked), timeUpdatesWhereChecked)
 }

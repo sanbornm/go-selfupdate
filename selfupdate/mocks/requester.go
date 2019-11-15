@@ -35,7 +35,6 @@ func (m *MockRequester) EXPECT() *MockRequesterMockRecorder {
 
 // Fetch mocks base method
 func (m *MockRequester) Fetch(url string) (io.ReadCloser, error) {
-	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Fetch", url)
 	ret0, _ := ret[0].(io.ReadCloser)
 	ret1, _ := ret[1].(error)
@@ -44,6 +43,5 @@ func (m *MockRequester) Fetch(url string) (io.ReadCloser, error) {
 
 // Fetch indicates an expected call of Fetch
 func (mr *MockRequesterMockRecorder) Fetch(url interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Fetch", reflect.TypeOf((*MockRequester)(nil).Fetch), url)
 }
