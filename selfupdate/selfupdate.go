@@ -51,17 +51,8 @@ var ErrHashMismatch = errors.New("new file hash mismatch after patch")
 // Example:
 //
 // ```golang
-//  updater := &selfupdate.Updater{
-//  	CurrentVersion: version,
-//  	ApiURL:         "http://updates.yourdomain.com/",
-//  	BinURL:         "http://updates.yourdownmain.com/",
-//  	DiffURL:        "http://updates.yourdomain.com/",
-//  	CacheDir:            "update",
-//  	CmdName:        "myapp", // app name
-//  }
-//  if updater != nil {
-//  	go updater.BackgroundRun()
-//  }
+// updater := selfupdate.NewUpdater(version, "http://updates.yourdomain.com/", "myapp")
+// updater.Run()
 // ```
 type Updater struct {
 	currentVersion     string            // Currently running version.
@@ -69,7 +60,6 @@ type Updater struct {
 	cmdName            string            // Command name is appended to the ApiURL like http://apiurl/CmdName/. This represents one binary.
 	binURL             string            // Base URL for full binary downloads.
 	diffURL            string            // Base URL for diff downloads.
-	cacheDir           string            // Directory to store selfupdate state.
 	requester          Requester         // Optional parameter to override existing http request handler
 	updateableResolver UpdatableResolver // Finds the thing that needs to be updated
 	platformResolver   PlatformResolver  // Figures out what platform we need to update for
@@ -77,43 +67,88 @@ type Updater struct {
 
 // NewUpdater creates a new updater with defaults that we're updating this
 // executable and it's going to be for the current OS and Architecture
-func NewUpdater(currentVersion string, updateDataURL string) Updater {
+func NewUpdater(currentVersion, updateDataURL, urlPostfix string) Updater {
 	return Updater{
 		currentVersion:     currentVersion,
 		apiURL:             updateDataURL,
 		binURL:             updateDataURL,
 		diffURL:            updateDataURL,
-		cacheDir:           "update",
 		requester:          HTTPRequester{},
 		updateableResolver: CurrentExeUpdatableResolver{},
 		platformResolver:   CurrentPlatformResolver{},
+		cmdName:            urlPostfix,
 	}
 }
 
+// SetUpdatableResolver sets what we use to determine which file needs to get
+// updated.
+//
+// NOTICE: This does not change the current updater, but makes a new one with
+// the resolver property changed
+func (u Updater) SetUpdatableResolver(resolver UpdatableResolver) Updater {
+	return Updater{
+		currentVersion:     u.currentVersion,
+		apiURL:             u.apiURL,
+		binURL:             u.binURL,
+		diffURL:            u.diffURL,
+		requester:          u.requester,
+		updateableResolver: resolver,
+		platformResolver:   u.platformResolver,
+		cmdName:            u.cmdName,
+	}
+}
+
+// SetRequester sets what we use to make requests and get binaries. By default uses
+// http. Can replace this with your own to add things like middleware.
+//
+// NOTICE: This does not change the current updater, but makes a new one with
+// the requester property changed
+func (u Updater) SetRequester(requester Requester) Updater {
+	return Updater{
+		currentVersion:     u.currentVersion,
+		apiURL:             u.apiURL,
+		binURL:             u.binURL,
+		diffURL:            u.diffURL,
+		requester:          requester,
+		updateableResolver: u.updateableResolver,
+		platformResolver:   u.platformResolver,
+		cmdName:            u.cmdName,
+	}
+}
+
+// SetPlatformResolver sets what we use to determine what platform the file
+// we're trying to update is for
+//
+// NOTICE: This does not change the current updater, but makes a new one with
+// the resolver property changed
+func (u Updater) SetPlatformResolver(resolver PlatformResolver) Updater {
+	return Updater{
+		currentVersion:     u.currentVersion,
+		apiURL:             u.apiURL,
+		binURL:             u.binURL,
+		diffURL:            u.diffURL,
+		requester:          u.requester,
+		updateableResolver: u.updateableResolver,
+		platformResolver:   resolver,
+		cmdName:            u.cmdName,
+	}
+}
+
+// UpdateAvailable fetches info from the server specificed and and checks if
+// what the version specified on the server matches what this program's version
+// is.
 func (u Updater) UpdateAvailable() (bool, error) {
-	return true, nil
+	info, err := u.fetchInfo()
+	if err != nil {
+		return false, err
+	}
+	return info.Version != u.currentVersion, nil
 }
 
 // Run attempts to grab the latest version information and then applies the
 // new patch if their is an update. If an update did occur, then we return
 // true. If we did not update (already up to date) then we return false.
-func (u Updater) Run() (updated bool, err error) {
-
-	path, err := getExecRelativeDir(u.cacheDir)
-
-	if err != nil {
-		return false, err
-	}
-
-	// Create folder for storing updates if it doesn't exist
-	if err := os.MkdirAll(path, 0777); err != nil {
-		return false, err
-	}
-
-	return u.update()
-}
-
-func (u *Updater) update() (bool, error) {
+func (u *Updater) Run() (bool, error) {
 
 	info, err := u.fetchInfo()
 	if err != nil {
@@ -131,6 +166,7 @@ func (u *Updater) update() (bool, error) {
 	}
 
 	up := update.New()
+	up.Target(oldPath)
 
 	if err := up.CanUpdate(); err != nil {
 		return false, err
@@ -146,19 +182,19 @@ func (u *Updater) update() (bool, error) {
 		if err == ErrHashMismatch {
 			log.Println("update: hash mismatch from patched binary")
 		} else {
+			// If we indeed did have a url for discovering the binary diffs,
+			// then we know we indeed did fail patching
 			if u.diffURL != "" {
-				log.Println("update: patching binary,", err)
+				log.Printf("error patching binary: %s", err)
 			}
 		}
-
-		return false, err
 
 		bin, err = u.getEntireBinaryForVersion(info)
 		if err != nil {
 			if err == ErrHashMismatch {
 				log.Println("update: hash mismatch from full binary")
 			} else {
-				log.Println("update: fetching full binary,", err)
+				log.Printf("error fetching full binary: %s", err)
 			}
 			return false, err
 		}
@@ -176,6 +212,8 @@ func (u *Updater) update() (bool, error) {
 	if err != nil {
 		return false, err
 	}
+
+	u.currentVersion = info.Version
 
 	return true, nil
 }
@@ -228,7 +266,6 @@ func (u Updater) getExeWithPatchForVersion(old io.Reader, info versionInfo) ([]b
 	}
 
 	bin := buf.Bytes()
-	log.Printf("bytes: %d", len(bin))
 
 	if !verifySha(bin, info.Sha256) {
 		return nil, ErrHashMismatch

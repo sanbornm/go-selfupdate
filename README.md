@@ -22,17 +22,33 @@ Requires Golang 1.8 or higher.
 ### Enable your App to Self Update
 
 ```golang
-var updater = &selfupdate.Updater{
-    CurrentVersion: version,
-    ApiURL:         "http://updates.yourdomain.com/",
-    BinURL:         "http://updates.yourdomain.com/",
-    DiffURL:        "http://updates.yourdomain.com/",
-    CacheDir:       "update",
-    CmdName:        "myapp", // app name
-}
+updater := selfupdate.NewUpdater(version, "http://updates.yourdomain.com/", "myapp")
 
-if updater != nil {
-    go updater.BackgroundRun()
+// run an update in the background
+go func () {
+    updated, err := updater.Run()
+    if err != nil {
+        log.Printf("Error updating: %s", err.Error())
+    } else {
+        log.Printf("Update applied: %t", updated)
+    }
+}
+```
+
+If you prefer to instead of keeping this app updated, but a different file, just specify the path:
+
+```golang
+updater := selfupdate.NewUpdater(version, "http://updates.yourdomain.com/", "myapp").
+    SetUpdatableResolver(NewSpecificFileUpdatableResolver("path/to/your/file"))
+
+// run an update in the background
+go func () {
+    updated, err := updater.Run()
+    if err != nil {
+        log.Printf("Error updating: %s", err.Error())
+    } else {
+        log.Printf("Update applied: %t", updated)
+    }
 }
 ```
 
