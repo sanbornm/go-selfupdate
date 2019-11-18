@@ -3,7 +3,6 @@ package selfupdate
 import (
 	"bytes"
 	"crypto/sha256"
-	"log"
 	"os"
 	"path/filepath"
 )
@@ -19,7 +18,5 @@ func getExecRelativeDir(dir string) (string, error) {
 func verifySha(bin []byte, sha []byte) bool {
 	h := sha256.New()
 	h.Write(bin)
-	log.Print(h.Sum(nil))
-	log.Print(sha)
 	return bytes.Equal(h.Sum(nil), sha)
 }

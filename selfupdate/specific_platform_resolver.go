@@ -2,7 +2,6 @@ package selfupdate
 
 import (
 	"fmt"
-	"runtime"
 )
 
 // SpecificPlatformResolver will create a key that based on the operating
@@ -19,5 +18,5 @@ func NewSpecificPlatformResolver(os, arch string) SpecificPlatformResolver {
 // Resolve returns the architecture and operating system used to build this
 // resolver
 func (c SpecificPlatformResolver) Resolve() (string, error) {
-	return fmt.Sprintf("%s-%s", runtime.GOOS, runtime.GOARCH), nil
+	return fmt.Sprintf("%s-%s", c.os, c.arch), nil
 }

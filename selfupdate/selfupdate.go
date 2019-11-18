@@ -230,8 +230,6 @@ func (u Updater) getExeWithPatchForVersion(old io.Reader, info versionInfo) ([]b
 	bin := buf.Bytes()
 	log.Printf("bytes: %d", len(bin))
 
-	// ioutil.WriteFile("patched.exe", bin, 0777)
-
 	if !verifySha(bin, info.Sha256) {
 		return nil, ErrHashMismatch
 	}

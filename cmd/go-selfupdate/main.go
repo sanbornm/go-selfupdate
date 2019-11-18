@@ -23,16 +23,14 @@ type current struct {
 	Sha256  []byte
 }
 
-func generateSha256(path string) []byte {
-	h := sha256.New()
+func generateSha256(path string) ([]byte, error) {
 	b, err := ioutil.ReadFile(path)
 	if err != nil {
-		fmt.Println(err)
+		return nil, err
 	}
+	h := sha256.New()
 	h.Write(b)
-	sum := h.Sum(nil)
-	return sum
-	//return base64.URLEncoding.EncodeToString(sum)
+	return h.Sum(nil), nil
 }
 
 type gzReader struct {
@@ -62,23 +60,21 @@ func newGzReader(r io.ReadCloser) io.ReadCloser {
 	return g
 }
 
-func createUpdate(path string, platform string) {
-	c := current{
-		Version: version,
-		Sha256:  generateSha256(path),
-	}
+func getPatch(oldBinary, newBinary io.Reader) (*bytes.Buffer, error) {
+	patch := new(bytes.Buffer)
+	err := binarydist.Diff(oldBinary, newBinary, patch)
+	return patch, err
+}
 
-	b, err := json.MarshalIndent(c, "", "    ")
-	if err != nil {
-		fmt.Println("error:", err)
-	}
-	err = ioutil.WriteFile(filepath.Join(genDir, platform+".json"), b, 0755)
-	if err != nil {
-		panic(err)
-	}
+func getPatchFromGzFiles(oldFile, newFile io.ReadCloser) (*bytes.Buffer, error) {
+	ar := newGzReader(oldFile)
+	defer ar.Close()
+	br := newGzReader(newFile)
+	defer br.Close()
+	return getPatch(ar, br)
+}
 
-	os.MkdirAll(filepath.Join(genDir, version), 0755)
-
+func compressFile(path string) ([]byte, error) {
 	var buf bytes.Buffer
 	w := gzip.NewWriter(&buf)
 	f, err := ioutil.ReadFile(path)
@@ -87,7 +83,37 @@ func createUpdate(path string, platform string) {
 	}
 	w.Write(f)
 	w.Close() // You must close this first to flush the bytes to the buffer.
-	err = ioutil.WriteFile(filepath.Join(genDir, version, platform+".gz"), buf.Bytes(), 0755)
+	return buf.Bytes(), nil
+}
+
+func createUpdate(path string, platform string) {
+
+	hash, err := generateSha256(path)
+	if err != nil {
+		panic(err)
+	}
+
+	c := current{
+		Version: version,
+		Sha256:  hash,
+	}
+
+	b, err := json.MarshalIndent(c, "", "    ")
+	if err != nil {
+		panic(err)
+	}
+	err = ioutil.WriteFile(filepath.Join(genDir, platform+".json"), b, 0755)
+	if err != nil {
+		panic(err)
+	}
+
+	os.MkdirAll(filepath.Join(genDir, version), 0755)
+
+	compressedBytes, err := compressFile(path)
+	if err != nil {
+		panic(err)
+	}
+	err = ioutil.WriteFile(filepath.Join(genDir, version, platform+".gz"), compressedBytes, 0755)
 
 	files, err := ioutil.ReadDir(genDir)
 	if err != nil {
@@ -121,13 +147,8 @@ func createUpdate(path string, platform string) {
 			fmt.Fprintf(os.Stderr, "Can't open %s: error: %s\n", fName, err)
 			os.Exit(1)
 		}
-
-		ar := newGzReader(old)
-		defer ar.Close()
-		br := newGzReader(newF)
-		defer br.Close()
-		patch := new(bytes.Buffer)
-		if err := binarydist.Diff(ar, br, patch); err != nil {
+		patch, err := getPatchFromGzFiles(old, newF)
+		if err != nil {
 			panic(err)
 		}
 		err = ioutil.WriteFile(filepath.Join(genDir, file.Name(), version, platform), patch.Bytes(), 0755)

@@ -20,7 +20,11 @@ import (
 var testHash = sha256.New()
 
 func cpFileAsTemp(fileToCopy, newFlieName string) *os.File {
-	content := []byte("temporary file's content")
+	content, err := ioutil.ReadFile(fileToCopy)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	tmpfile, err := ioutil.TempFile("", newFlieName)
 	if err != nil {
 		log.Fatal(err)
@@ -100,9 +104,9 @@ func TestUpdaterPatchesBinariesWhenVersionsDiffer(t *testing.T) {
 
 	mr.EXPECT().
 		Fetch("http://updates.yourdomain.com/myapp/1.0/1.1/windows-amd64").
-		Return(os.Open("golden_data/public/1.0/1.1/windows-amd64"))
+		Return(os.Open("../golden_data/public/1.0/1.1/windows-amd64"))
 
-	f := cpFileAsTemp("golden_data/main-before.exe", "toUpdate")
+	f := cpFileAsTemp("../golden_data/main-before.exe", "toUpdate")
 
 	// clean up temp files
 	defer os.Remove(f.Name())
