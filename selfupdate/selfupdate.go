@@ -1,4 +1,4 @@
-// Update protocol:
+// Package selfupdate update protocol:
 //
 //   GET hk.heroku.com/hk/linux-amd64.json
 //
@@ -33,30 +33,16 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
-	"math/rand"
 	"net/url"
 	"os"
-	"path/filepath"
-	"runtime"
-	"time"
 
-	"github.com/kardianos/osext"
 	"github.com/kr/binarydist"
 	"gopkg.in/inconshreveable/go-update.v0"
 )
 
-const (
-	upcktimePath = "cktime"
-	plat         = runtime.GOOS + "-" + runtime.GOARCH
-)
-
-const devValidTime = 7 * 24 * time.Hour
-
+// ErrHashMismatch returned whenever the new file's hash is mismatched after patch, indicating patch was unsuccesful.
 var ErrHashMismatch = errors.New("new file hash mismatch after patch")
-var up = update.New()
-var defaultHTTPRequester = HTTPRequester{}
 
 // Updater is the configuration and runtime data for doing an update.
 //
@@ -64,107 +50,153 @@ var defaultHTTPRequester = HTTPRequester{}
 //
 // Example:
 //
-//  updater := &selfupdate.Updater{
-//  	CurrentVersion: version,
-//  	ApiURL:         "http://updates.yourdomain.com/",
-//  	BinURL:         "http://updates.yourdownmain.com/",
-//  	DiffURL:        "http://updates.yourdomain.com/",
-//  	Dir:            "update/",
-//  	CmdName:        "myapp", // app name
-//  }
-//  if updater != nil {
-//  	go updater.BackgroundRun()
-//  }
+// ```golang
+// updater := selfupdate.NewUpdater(version, "http://updates.yourdomain.com/", "myapp")
+// updater.Run()
+// ```
 type Updater struct {
-	CurrentVersion string    // Currently running version.
-	ApiURL         string    // Base URL for API requests (json files).
-	CmdName        string    // Command name is appended to the ApiURL like http://apiurl/CmdName/. This represents one binary.
-	BinURL         string    // Base URL for full binary downloads.
-	DiffURL        string    // Base URL for diff downloads.
-	Dir            string    // Directory to store selfupdate state.
-	ForceCheck     bool      // Check for update regardless of cktime timestamp
-	Requester      Requester //Optional parameter to override existing http request handler
-	Info           struct {
-		Version string
-		Sha256  []byte
+	currentVersion     string            // Currently running version.
+	apiURL             string            // Base URL for API requests (json files).
+	cmdName            string            // Command name is appended to the ApiURL like http://apiurl/CmdName/. This represents one binary.
+	binURL             string            // Base URL for full binary downloads.
+	diffURL            string            // Base URL for diff downloads.
+	requester          Requester         // Optional parameter to override existing http request handler
+	updateableResolver UpdatableResolver // Finds the thing that needs to be updated
+	platformResolver   PlatformResolver  // Figures out what platform we need to update for
+}
+
+// NewUpdater creates a new updater with defaults that we're updating this
+// executable and it's going to be for the current OS and Architecture
+func NewUpdater(currentVersion, updateDataURL, urlPostfix string) Updater {
+	return Updater{
+		currentVersion:     currentVersion,
+		apiURL:             updateDataURL,
+		binURL:             updateDataURL,
+		diffURL:            updateDataURL,
+		requester:          HTTPRequester{},
+		updateableResolver: CurrentExeUpdatableResolver{},
+		platformResolver:   CurrentPlatformResolver{},
+		cmdName:            urlPostfix,
 	}
 }
 
-func (u *Updater) getExecRelativeDir(dir string) string {
-	filename, _ := osext.Executable()
-	path := filepath.Join(filepath.Dir(filename), dir)
-	return path
+// SetUpdatableResolver sets what we use to determine which file needs to get
+// updated.
+//
+// NOTICE: This does not change the current updater, but makes a new one with
+// the resolver property changed
+func (u Updater) SetUpdatableResolver(resolver UpdatableResolver) Updater {
+	return Updater{
+		currentVersion:     u.currentVersion,
+		apiURL:             u.apiURL,
+		binURL:             u.binURL,
+		diffURL:            u.diffURL,
+		requester:          u.requester,
+		updateableResolver: resolver,
+		platformResolver:   u.platformResolver,
+		cmdName:            u.cmdName,
+	}
 }
 
-// BackgroundRun starts the update check and apply cycle.
-func (u *Updater) BackgroundRun() error {
-	if err := os.MkdirAll(u.getExecRelativeDir(u.Dir), 0777); err != nil {
-		// fail
-		return err
+// SetRequester sets what we use to make requests and get binaries. By default uses
+// http. Can replace this with your own to add things like middleware.
+//
+// NOTICE: This does not change the current updater, but makes a new one with
+// the requester property changed
+func (u Updater) SetRequester(requester Requester) Updater {
+	return Updater{
+		currentVersion:     u.currentVersion,
+		apiURL:             u.apiURL,
+		binURL:             u.binURL,
+		diffURL:            u.diffURL,
+		requester:          requester,
+		updateableResolver: u.updateableResolver,
+		platformResolver:   u.platformResolver,
+		cmdName:            u.cmdName,
 	}
-	if u.wantUpdate() {
-		if err := up.CanUpdate(); err != nil {
-			// fail
-			return err
-		}
-		//self, err := osext.Executable()
-		//if err != nil {
-		// fail update, couldn't figure out path to self
-		//return
-		//}
-		// TODO(bgentry): logger isn't on Windows. Replace w/ proper error reports.
-		if err := u.update(); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
-func (u *Updater) wantUpdate() bool {
-	path := u.getExecRelativeDir(u.Dir + upcktimePath)
-	if u.CurrentVersion == "dev" || (!u.ForceCheck && readTime(path).After(time.Now())) {
-		return false
+// SetPlatformResolver sets what we use to determine what platform the file
+// we're trying to update is for
+//
+// NOTICE: This does not change the current updater, but makes a new one with
+// the resolver property changed
+func (u Updater) SetPlatformResolver(resolver PlatformResolver) Updater {
+	return Updater{
+		currentVersion:     u.currentVersion,
+		apiURL:             u.apiURL,
+		binURL:             u.binURL,
+		diffURL:            u.diffURL,
+		requester:          u.requester,
+		updateableResolver: u.updateableResolver,
+		platformResolver:   resolver,
+		cmdName:            u.cmdName,
 	}
-	wait := 24*time.Hour + randDuration(24*time.Hour)
-	return writeTime(path, time.Now().Add(wait))
 }
 
-func (u *Updater) update() error {
-	path, err := osext.Executable()
+// UpdateAvailable fetches info from the server specificed and and checks if
+// what the version specified on the server matches what this program's version
+// is.
+func (u Updater) UpdateAvailable() (bool, error) {
+	info, err := u.fetchInfo()
 	if err != nil {
-		return err
+		return false, err
 	}
-	old, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	defer old.Close()
+	return info.Version != u.currentVersion, nil
+}
 
-	err = u.fetchInfo()
+// Run attempts to grab the latest version information and then applies the
+// new patch if their is an update. If an update did occur, then we return
+// true. If we did not update (already up to date) then we return false.
+func (u *Updater) Run() (bool, error) {
+
+	info, err := u.fetchInfo()
 	if err != nil {
-		return err
+		return false, err
 	}
-	if u.Info.Version == u.CurrentVersion {
-		return nil
+
+	// No need to update
+	if info.Version == u.currentVersion {
+		return false, nil
 	}
-	bin, err := u.fetchAndVerifyPatch(old)
+
+	oldPath, err := u.updateableResolver.Resolve()
+	if err != nil {
+		return false, err
+	}
+
+	up := update.New()
+	up.Target(oldPath)
+
+	if err := up.CanUpdate(); err != nil {
+		return false, err
+	}
+
+	old, err := os.Open(oldPath)
+	if err != nil {
+		return false, err
+	}
+
+	bin, err := u.getExeWithPatchForVersion(old, info)
 	if err != nil {
 		if err == ErrHashMismatch {
 			log.Println("update: hash mismatch from patched binary")
 		} else {
-			if u.DiffURL != "" {
-				log.Println("update: patching binary,", err)
+			// If we indeed did have a url for discovering the binary diffs,
+			// then we know we indeed did fail patching
+			if u.diffURL != "" {
+				log.Printf("error patching binary: %s", err)
 			}
 		}
 
-		bin, err = u.fetchAndVerifyFullBin()
+		bin, err = u.getEntireBinaryForVersion(info)
 		if err != nil {
 			if err == ErrHashMismatch {
 				log.Println("update: hash mismatch from full binary")
 			} else {
-				log.Println("update: fetching full binary,", err)
+				log.Printf("error fetching full binary: %s", err)
 			}
-			return err
+			return false, err
 		}
 	}
 
@@ -174,66 +206,82 @@ func (u *Updater) update() error {
 
 	err, errRecover := up.FromStream(bytes.NewBuffer(bin))
 	if errRecover != nil {
-		return fmt.Errorf("update and recovery errors: %q %q", err, errRecover)
+		return false, fmt.Errorf("update and recovery errors: %q %q", err, errRecover)
 	}
+
 	if err != nil {
-		return err
+		return false, err
 	}
-	return nil
+
+	u.currentVersion = info.Version
+
+	return true, nil
 }
 
-func (u *Updater) fetchInfo() error {
-	r, err := u.fetch(u.ApiURL + url.QueryEscape(u.CmdName) + "/" + url.QueryEscape(plat) + ".json")
+func (u *Updater) fetchInfo() (versionInfo, error) {
+	if u.platformResolver == nil {
+		return versionInfo{}, errors.New("Unable to reolve platform because resolver is nil")
+	}
+
+	platformToUpdate, err := u.platformResolver.Resolve()
 	if err != nil {
-		return err
+		return versionInfo{}, err
+	}
+
+	r, err := u.fetch(fmt.Sprintf("%s%s/%s.json", u.apiURL, url.QueryEscape(u.cmdName), url.QueryEscape(platformToUpdate)))
+	if err != nil {
+		return versionInfo{}, err
 	}
 	defer r.Close()
-	err = json.NewDecoder(r).Decode(&u.Info)
+
+	info := versionInfo{}
+	err = json.NewDecoder(r).Decode(&info)
 	if err != nil {
-		return err
+		return versionInfo{}, err
 	}
-	if len(u.Info.Sha256) != sha256.Size {
-		return errors.New("bad cmd hash in info")
+	if len(info.Sha256) != sha256.Size {
+		return versionInfo{}, errors.New("bad hash in info")
 	}
-	return nil
+	return info, nil
 }
 
-func (u *Updater) fetchAndVerifyPatch(old io.Reader) ([]byte, error) {
-	bin, err := u.fetchAndApplyPatch(old)
+// getExeWithPatchForVersion retrives the patch for the current  version and
+// applies it to the current executable passed in, and returns the results
+func (u Updater) getExeWithPatchForVersion(old io.Reader, info versionInfo) ([]byte, error) {
+
+	platformToUpdate, err := u.platformResolver.Resolve()
 	if err != nil {
 		return nil, err
 	}
-	if !verifySha(bin, u.Info.Sha256) {
-		return nil, ErrHashMismatch
-	}
-	return bin, nil
-}
 
-func (u *Updater) fetchAndApplyPatch(old io.Reader) ([]byte, error) {
-	r, err := u.fetch(u.DiffURL + url.QueryEscape(u.CmdName) + "/" + url.QueryEscape(u.CurrentVersion) + "/" + url.QueryEscape(u.Info.Version) + "/" + url.QueryEscape(plat))
+	r, err := u.fetch(u.diffURL + url.QueryEscape(u.cmdName) + "/" + url.QueryEscape(u.currentVersion) + "/" + url.QueryEscape(info.Version) + "/" + url.QueryEscape(platformToUpdate))
 	if err != nil {
 		return nil, err
 	}
 	defer r.Close()
 	var buf bytes.Buffer
 	err = binarydist.Patch(old, &buf, r)
-	return buf.Bytes(), err
-}
-
-func (u *Updater) fetchAndVerifyFullBin() ([]byte, error) {
-	bin, err := u.fetchBin()
 	if err != nil {
 		return nil, err
 	}
-	verified := verifySha(bin, u.Info.Sha256)
-	if !verified {
+
+	bin := buf.Bytes()
+
+	if !verifySha(bin, info.Sha256) {
 		return nil, ErrHashMismatch
 	}
+
 	return bin, nil
 }
 
-func (u *Updater) fetchBin() ([]byte, error) {
-	r, err := u.fetch(u.BinURL + url.QueryEscape(u.CmdName) + "/" + url.QueryEscape(u.Info.Version) + "/" + url.QueryEscape(plat) + ".gz")
+func (u Updater) getEntireBinaryForVersion(info versionInfo) ([]byte, error) {
+
+	platformToUpdate, err := u.platformResolver.Resolve()
+	if err != nil {
+		return nil, err
+	}
+
+	r, err := u.fetch(fmt.Sprintf("%s%s/%s/%s.gz", u.binURL, url.QueryEscape(u.cmdName), url.QueryEscape(info.Version), url.QueryEscape(platformToUpdate)))
 	if err != nil {
 		return nil, err
 	}
@@ -247,20 +295,21 @@ func (u *Updater) fetchBin() ([]byte, error) {
 		return nil, err
 	}
 
-	return buf.Bytes(), nil
-}
+	bin := buf.Bytes()
 
-// returns a random duration in [0,n).
-func randDuration(n time.Duration) time.Duration {
-	return time.Duration(rand.Int63n(int64(n)))
-}
-
-func (u *Updater) fetch(url string) (io.ReadCloser, error) {
-	if u.Requester == nil {
-		return defaultHTTPRequester.Fetch(url)
+	if !verifySha(bin, info.Sha256) {
+		return nil, ErrHashMismatch
 	}
 
-	readCloser, err := u.Requester.Fetch(url)
+	return bin, nil
+}
+
+func (u Updater) fetch(url string) (io.ReadCloser, error) {
+	if u.requester == nil {
+		return nil, errors.New("unable to fetch information with nil requester")
+	}
+
+	readCloser, err := u.requester.Fetch(url)
 	if err != nil {
 		return nil, err
 	}
@@ -270,29 +319,4 @@ func (u *Updater) fetch(url string) (io.ReadCloser, error) {
 	}
 
 	return readCloser, nil
-}
-
-func readTime(path string) time.Time {
-	p, err := ioutil.ReadFile(path)
-	if os.IsNotExist(err) {
-		return time.Time{}
-	}
-	if err != nil {
-		return time.Now().Add(1000 * time.Hour)
-	}
-	t, err := time.Parse(time.RFC3339, string(p))
-	if err != nil {
-		return time.Now().Add(1000 * time.Hour)
-	}
-	return t
-}
-
-func verifySha(bin []byte, sha []byte) bool {
-	h := sha256.New()
-	h.Write(bin)
-	return bytes.Equal(h.Sum(nil), sha)
-}
-
-func writeTime(path string, t time.Time) bool {
-	return ioutil.WriteFile(path, []byte(t.Format(time.RFC3339)), 0644) == nil
 }
