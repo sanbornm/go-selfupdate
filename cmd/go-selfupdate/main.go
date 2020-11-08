@@ -23,16 +23,14 @@ type current struct {
 	Sha256  []byte
 }
 
-func generateSha256(path string) []byte {
-	h := sha256.New()
+func generateSha256(path string) ([]byte, error) {
 	b, err := ioutil.ReadFile(path)
 	if err != nil {
-		fmt.Println(err)
+		return nil, err
 	}
+	h := sha256.New()
 	h.Write(b)
-	sum := h.Sum(nil)
-	return sum
-	//return base64.URLEncoding.EncodeToString(sum)
+	return h.Sum(nil), nil
 }
 
 type gzReader struct {
@@ -44,7 +42,10 @@ func (g *gzReader) Read(p []byte) (int, error) {
 }
 
 func (g *gzReader) Close() error {
-	g.z.Close()
+	err := g.z.Close()
+	if err != nil {
+		return err
+	}
 	return g.r.Close()
 }
 
@@ -59,20 +60,21 @@ func newGzReader(r io.ReadCloser) io.ReadCloser {
 	return g
 }
 
-func createUpdate(path string, platform string) {
-	c := current{Version: version, Sha256: generateSha256(path)}
+func getPatch(oldBinary, newBinary io.Reader) (*bytes.Buffer, error) {
+	patch := new(bytes.Buffer)
+	err := binarydist.Diff(oldBinary, newBinary, patch)
+	return patch, err
+}
 
-	b, err := json.MarshalIndent(c, "", "    ")
-	if err != nil {
-		fmt.Println("error:", err)
-	}
-	err = ioutil.WriteFile(filepath.Join(genDir, platform+".json"), b, 0755)
-	if err != nil {
-		panic(err)
-	}
+func getPatchFromGzFiles(oldFile, newFile io.ReadCloser) (*bytes.Buffer, error) {
+	ar := newGzReader(oldFile)
+	defer ar.Close()
+	br := newGzReader(newFile)
+	defer br.Close()
+	return getPatch(ar, br)
+}
 
-	os.MkdirAll(filepath.Join(genDir, version), 0755)
-
+func compressFile(path string) ([]byte, error) {
 	var buf bytes.Buffer
 	w := gzip.NewWriter(&buf)
 	f, err := ioutil.ReadFile(path)
@@ -81,7 +83,37 @@ func createUpdate(path string, platform string) {
 	}
 	w.Write(f)
 	w.Close() // You must close this first to flush the bytes to the buffer.
-	err = ioutil.WriteFile(filepath.Join(genDir, version, platform+".gz"), buf.Bytes(), 0755)
+	return buf.Bytes(), nil
+}
+
+func createUpdate(path string, platform string) {
+
+	hash, err := generateSha256(path)
+	if err != nil {
+		panic(err)
+	}
+
+	c := current{
+		Version: version,
+		Sha256:  hash,
+	}
+
+	b, err := json.MarshalIndent(c, "", "    ")
+	if err != nil {
+		panic(err)
+	}
+	err = ioutil.WriteFile(filepath.Join(genDir, platform+".json"), b, 0755)
+	if err != nil {
+		panic(err)
+	}
+
+	os.MkdirAll(filepath.Join(genDir, version), 0755)
+
+	compressedBytes, err := compressFile(path)
+	if err != nil {
+		panic(err)
+	}
+	err = ioutil.WriteFile(filepath.Join(genDir, version, platform+".gz"), compressedBytes, 0755)
 
 	files, err := ioutil.ReadDir(genDir)
 	if err != nil {
@@ -100,9 +132,13 @@ func createUpdate(path string, platform string) {
 
 		fName := filepath.Join(genDir, file.Name(), platform+".gz")
 		old, err := os.Open(fName)
-		if err != nil {
+		if os.IsNotExist(err) {
 			// Don't have an old release for this os/arch, continue on
 			continue
+		}
+
+		if err != nil {
+			panic(err)
 		}
 
 		fName = filepath.Join(genDir, version, platform+".gz")
@@ -111,16 +147,14 @@ func createUpdate(path string, platform string) {
 			fmt.Fprintf(os.Stderr, "Can't open %s: error: %s\n", fName, err)
 			os.Exit(1)
 		}
-
-		ar := newGzReader(old)
-		defer ar.Close()
-		br := newGzReader(newF)
-		defer br.Close()
-		patch := new(bytes.Buffer)
-		if err := binarydist.Diff(ar, br, patch); err != nil {
+		patch, err := getPatchFromGzFiles(old, newF)
+		if err != nil {
 			panic(err)
 		}
-		ioutil.WriteFile(filepath.Join(genDir, file.Name(), version, platform), patch.Bytes(), 0755)
+		err = ioutil.WriteFile(filepath.Join(genDir, file.Name(), version, platform), patch.Bytes(), 0755)
+		if err != nil {
+			panic(err)
+		}
 	}
 }
 
@@ -138,14 +172,13 @@ func createBuildDir() {
 func main() {
 	outputDirFlag := flag.String("o", "public", "Output directory for writing updates")
 
-	var defaultPlatform string
+	defaultPlatform := runtime.GOOS + "-" + runtime.GOARCH
 	goos := os.Getenv("GOOS")
 	goarch := os.Getenv("GOARCH")
 	if goos != "" && goarch != "" {
 		defaultPlatform = goos + "-" + goarch
-	} else {
-		defaultPlatform = runtime.GOOS + "-" + runtime.GOARCH
 	}
+
 	platformFlag := flag.String("platform", defaultPlatform,
 		"Target platform in the form OS-ARCH. Defaults to running os/arch or the combination of the environment variables GOOS and GOARCH if both are set.")
 
