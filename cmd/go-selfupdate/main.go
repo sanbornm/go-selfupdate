@@ -132,7 +132,7 @@ func createUpdate(path string, platform string) {
 
 		fName := filepath.Join(genDir, file.Name(), platform+".gz")
 		old, err := os.Open(fName)
-		if err == os.ErrNotExist {
+		if os.IsNotExist(err) {
 			// Don't have an old release for this os/arch, continue on
 			continue
 		}
