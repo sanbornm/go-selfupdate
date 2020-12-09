@@ -158,6 +158,29 @@ func (u *Updater) ClearUpdateState() {
 	os.Remove(path)
 }
 
+// UpdateAvailable checks if update is available and returns version
+func (u *Updater) UpdateAvailable() (string, error) {
+	path, err := osext.Executable()
+	if err != nil {
+		return "", err
+	}
+	old, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer old.Close()
+
+	err = u.fetchInfo()
+	if err != nil {
+		return "", err
+	}
+	if u.Info.Version == u.CurrentVersion {
+		return "", nil
+	} else {
+		return u.Info.Version, nil
+	}
+}
+
 // Update initiates the self update process
 func (u *Updater) Update() error {
 	path, err := osext.Executable()
