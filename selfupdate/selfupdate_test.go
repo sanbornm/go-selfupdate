@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"testing"
+	"time"
 )
 
 var testHash = sha256.New()
@@ -17,7 +18,11 @@ func TestUpdaterFetchMustReturnNonNilReaderCloser(t *testing.T) {
 			return nil, nil
 		})
 	updater := createUpdater(mr)
+	updater.CheckTime = 24
+	updater.RandomizeTime = 24
+
 	err := updater.BackgroundRun()
+
 	if err != nil {
 		equals(t, "Fetch was expected to return non-nil ReadCloser", err.Error())
 	} else {
@@ -34,10 +39,52 @@ func TestUpdaterWithEmptyPayloadNoErrorNoUpdate(t *testing.T) {
 			return newTestReaderCloser("{}"), nil
 		})
 	updater := createUpdater(mr)
+	updater.CheckTime = 24
+	updater.RandomizeTime = 24
 
 	err := updater.BackgroundRun()
 	if err != nil {
 		t.Errorf("Error occurred: %#v", err)
+	}
+}
+
+func TestUpdaterCheckTime(t *testing.T) {
+	mr := &mockRequester{}
+	mr.handleRequest(
+		func(url string) (io.ReadCloser, error) {
+			equals(t, "http://updates.yourdomain.com/myapp/darwin-amd64.json", url)
+			return newTestReaderCloser("{}"), nil
+		})
+
+	// Run test with various time
+	runTestTimeChecks(t, mr, 0, 0, false)
+	runTestTimeChecks(t, mr, 0, 5, true)
+	runTestTimeChecks(t, mr, 1, 0, true)
+	runTestTimeChecks(t, mr, 100, 100, true)
+}
+
+// Helper function to run check time tests
+func runTestTimeChecks(t *testing.T, mr *mockRequester, checkTime int, randomizeTime int, expectUpdate bool) {
+	updater := createUpdater(mr)
+	updater.ClearUpdateState()
+	updater.CheckTime = checkTime
+	updater.RandomizeTime = randomizeTime
+
+	updater.BackgroundRun()
+
+	if updater.WantUpdate() == expectUpdate {
+		t.Errorf("WantUpdate returned %v; want %v", updater.WantUpdate(), expectUpdate)
+	}
+
+	maxHrs := time.Duration(updater.CheckTime+updater.RandomizeTime) * time.Hour
+	maxTime := time.Now().Add(maxHrs)
+
+	if !updater.NextUpdate().Before(maxTime) {
+		t.Errorf("NextUpdate should less than %s hrs (CheckTime + RandomizeTime) from now; now %s; next update %s", maxHrs, time.Now(), updater.NextUpdate())
+	}
+
+	if maxHrs > 0 && !updater.NextUpdate().After(time.Now()) {
+		t.Errorf("NextUpdate should be after now")
 	}
 }
 
