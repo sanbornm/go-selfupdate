@@ -19,8 +19,8 @@ read -n 1 -p "Press any key to start." ignored; echo
 echo "Building dev version of hello-updater"; echo
 go build -ldflags="-X main.version=dev" -o hello-updater src/hello-updater/main.go
 
-echo "Copying it to deployment folder"; echo
-cp hello-updater deployment/
+echo "Mkdir it to deployment folder"; echo
+mkdir -p deployment/ && cp hello-updater deployment/
 
 
 echo "Running deployment/hello-updater"
