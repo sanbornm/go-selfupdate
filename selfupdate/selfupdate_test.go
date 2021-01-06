@@ -52,7 +52,7 @@ func TestUpdaterCheckTime(t *testing.T) {
 	mr := &mockRequester{}
 	mr.handleRequest(
 		func(url string) (io.ReadCloser, error) {
-			equals(t, "http://updates.yourdomain.com/myapp/darwin-amd64.json", url)
+			equals(t, "http://updates.yourdomain.com/myapp/linux-amd64.json", url)
 			return newTestReaderCloser("{}"), nil
 		})
 
