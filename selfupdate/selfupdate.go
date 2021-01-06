@@ -207,6 +207,7 @@ func (u *Updater) Update() error {
 		} else {
 			if u.DiffURL != "" {
 				log.Println("update: patching binary,", err)
+				return err
 			}
 		}
 
