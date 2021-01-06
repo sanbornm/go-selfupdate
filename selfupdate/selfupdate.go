@@ -83,6 +83,8 @@ type Updater struct {
 	DiffURL        string    // Base URL for diff downloads.
 	Dir            string    // Directory to store selfupdate state.
 	ForceCheck     bool      // Check for update regardless of cktime timestamp
+	CheckTime      int       // Time in hours before next check
+	RandomizeTime  int       // Time in hours to randomize with CheckTime
 	Requester      Requester //Optional parameter to override existing http request handler
 	Info           struct {
 		Version string
@@ -102,34 +104,85 @@ func (u *Updater) BackgroundRun() error {
 		// fail
 		return err
 	}
-	if u.wantUpdate() {
+	if u.WantUpdate() {
 		if err := up.CanUpdate(); err != nil {
 			// fail
 			return err
 		}
+
+		u.SetUpdateTime()
+
 		//self, err := osext.Executable()
 		//if err != nil {
 		// fail update, couldn't figure out path to self
 		//return
 		//}
 		// TODO(bgentry): logger isn't on Windows. Replace w/ proper error reports.
-		if err := u.update(); err != nil {
+		if err := u.Update(); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (u *Updater) wantUpdate() bool {
-	path := u.getExecRelativeDir(u.Dir + upcktimePath)
-	if u.CurrentVersion == "dev" || (!u.ForceCheck && readTime(path).After(time.Now())) {
+// WantUpdate returns boolean designating if an update is desired
+func (u *Updater) WantUpdate() bool {
+	if u.CurrentVersion == "dev" || (!u.ForceCheck && u.NextUpdate().After(time.Now())) {
 		return false
 	}
-	wait := 24*time.Hour + randDuration(24*time.Hour)
-	return writeTime(path, time.Now().Add(wait))
+
+	return true
 }
 
-func (u *Updater) update() error {
+// NextUpdate returns the next time update should be checked
+func (u *Updater) NextUpdate() time.Time {
+	path := u.getExecRelativeDir(u.Dir + upcktimePath)
+	nextTime := readTime(path)
+
+	return nextTime
+}
+
+// SetUpdateTime writes the next update time to the state file
+func (u *Updater) SetUpdateTime() bool {
+	path := u.getExecRelativeDir(u.Dir + upcktimePath)
+	wait := time.Duration(u.CheckTime) * time.Hour
+	// Add 1 to random time since max is not included
+	waitrand := time.Duration(rand.Intn(u.RandomizeTime+1)) * time.Hour
+
+	return writeTime(path, time.Now().Add(wait+waitrand))
+}
+
+// ClearUpdateState writes current time to state file
+func (u *Updater) ClearUpdateState() {
+	path := u.getExecRelativeDir(u.Dir + upcktimePath)
+	os.Remove(path)
+}
+
+// UpdateAvailable checks if update is available and returns version
+func (u *Updater) UpdateAvailable() (string, error) {
+	path, err := osext.Executable()
+	if err != nil {
+		return "", err
+	}
+	old, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer old.Close()
+
+	err = u.fetchInfo()
+	if err != nil {
+		return "", err
+	}
+	if u.Info.Version == u.CurrentVersion {
+		return "", nil
+	} else {
+		return u.Info.Version, nil
+	}
+}
+
+// Update initiates the self update process
+func (u *Updater) Update() error {
 	path, err := osext.Executable()
 	if err != nil {
 		return err
@@ -248,11 +301,6 @@ func (u *Updater) fetchBin() ([]byte, error) {
 	}
 
 	return buf.Bytes(), nil
-}
-
-// returns a random duration in [0,n).
-func randDuration(n time.Duration) time.Duration {
-	return time.Duration(rand.Int63n(int64(n)))
 }
 
 func (u *Updater) fetch(url string) (io.ReadCloser, error) {
