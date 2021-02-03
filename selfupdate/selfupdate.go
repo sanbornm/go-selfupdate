@@ -86,10 +86,7 @@ type Updater struct {
 	CheckTime      int       // Time in hours before next check
 	RandomizeTime  int       // Time in hours to randomize with CheckTime
 	Requester      Requester //Optional parameter to override existing http request handler
-	Info           struct {
-		Version string
-		Sha256  []byte
-	}
+	Info           Info
 }
 
 func (u *Updater) getExecRelativeDir(dir string) string {
