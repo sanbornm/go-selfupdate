@@ -86,13 +86,13 @@ func runTestTimeChecks(t *testing.T, mr Requester, checkTime int, randomizeTime 
 }
 
 func TestUpdaterWithEmptyPayloadNoErrorNoUpdateEscapedPath(t *testing.T) {
-	mr := &mockRequester{}
-	mr.handleRequest(
-		func(url string) (io.ReadCloser, error) {
-			equals(t, "http://updates.yourdomain.com/myapp%2Bfoo/darwin-amd64.json", url)
-			return newTestReaderCloser("{}"), nil
-		})
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+	mr := mocks.NewMockRequester(ctrl)
+	mr.EXPECT().Fetch("http://updates.yourdomain.com/myapp%2Bfoo/darwin-amd64.json").Return(newTestReaderCloser("{}"), nil).Times(1)
+
 	updater := createUpdaterWithEscapedCharacters(mr)
+	updater.ForceCheck = true
 
 	err := updater.BackgroundRun()
 	if err != nil {
