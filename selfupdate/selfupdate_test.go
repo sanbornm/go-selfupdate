@@ -3,6 +3,7 @@ package selfupdate
 import (
 	"bytes"
 	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"io"
 	"testing"
@@ -18,7 +19,7 @@ func TestUpdaterFetchMustReturnNonNilReaderCloser(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 	mr := mocks.NewMockRequester(ctrl)
-	mr.EXPECT().Fetch("http://updates.yourdomain.com/myapp/darwin-amd64.json").Return(nil, nil).Times(1)
+	mr.EXPECT().Fetch("http://api.updates.yourdomain.com/myapp/darwin-amd64.json").Return(nil, nil).Times(1)
 
 	updater := createUpdater(mr)
 	err := updater.BackgroundRun()
@@ -35,7 +36,8 @@ func TestUpdaterWithEmptyPayloadNoErrorNoUpdate(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 	mr := mocks.NewMockRequester(ctrl)
-	mr.EXPECT().Fetch("http://updates.yourdomain.com/myapp/darwin-amd64.json").Return(newTestReaderCloser("{}"), nil).Times(1)
+	mr.EXPECT().Fetch("http://api.updates.yourdomain.com/myapp/darwin-amd64.json").Return(newTestReaderCloser("{}"), nil).Times(1)
+	mr.EXPECT().Fetch(gomock.Any()).Times(0)
 
 	updater := createUpdater(mr)
 	updater.CheckTime = 24
@@ -47,11 +49,38 @@ func TestUpdaterWithEmptyPayloadNoErrorNoUpdate(t *testing.T) {
 	}
 }
 
+func TestUpdaterWithNewVersionAndMissingBinaryReturnsError(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+	mr := mocks.NewMockRequester(ctrl)
+	h := sha256.New()
+	h.Write([]byte("Test"))
+	c := Info{Version: "1.3", Sha256: h.Sum(nil)}
+
+	b, err := json.MarshalIndent(c, "", "    ")
+	mr.EXPECT().Fetch("http://api.updates.yourdomain.com/myapp/darwin-amd64.json").Return(newTestReaderCloser(string(b)), nil).Times(1)
+	mr.EXPECT().Fetch("http://diff.updates.yourdomain.com/myapp/1.2/1.3/darwin-amd64").Return(newTestReaderCloser("{}"), fmt.Errorf("Bad status code on diff: 404")).Times(1)
+	mr.EXPECT().Fetch("http://bin.updates.yourdownmain.com/myapp/1.3/darwin-amd64.gz").Return(newTestReaderCloser("{}"), fmt.Errorf("Bad status code on binary: 404")).Times(1)
+	mr.EXPECT().Fetch(gomock.Any()).Times(0)
+
+	updater := createUpdater(mr)
+	updater.ForceCheck = true
+
+	err = updater.BackgroundRun()
+	if err != nil {
+		equals(t, "Bad status code on binary: 404", err.Error())
+	} else {
+		t.Log("Expected an error")
+		t.Fail()
+	}
+}
+
 func TestUpdaterCheckTime(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 	mr := mocks.NewMockRequester(ctrl)
-	mr.EXPECT().Fetch("http://updates.yourdomain.com/myapp/darwin-amd64.json").Return(newTestReaderCloser("{}"), nil).Times(4)
+	mr.EXPECT().Fetch("http://api.updates.yourdomain.com/myapp/darwin-amd64.json").Return(newTestReaderCloser("{}"), nil).Times(4)
+	mr.EXPECT().Fetch(gomock.Any()).Times(0) // no additional calls
 
 	// Run test with various time
 	runTestTimeChecks(t, mr, 0, 0, false)
@@ -89,7 +118,8 @@ func TestUpdaterWithEmptyPayloadNoErrorNoUpdateEscapedPath(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 	mr := mocks.NewMockRequester(ctrl)
-	mr.EXPECT().Fetch("http://updates.yourdomain.com/myapp%2Bfoo/darwin-amd64.json").Return(newTestReaderCloser("{}"), nil).Times(1)
+	mr.EXPECT().Fetch("http://api.updates.yourdomain.com/myapp%2Bfoo/darwin-amd64.json").Return(newTestReaderCloser("{}"), nil).Times(1)
+	mr.EXPECT().Fetch(gomock.Any()).Times(0) // no additional calls
 
 	updater := createUpdaterWithEscapedCharacters(mr)
 	updater.ForceCheck = true
@@ -103,9 +133,9 @@ func TestUpdaterWithEmptyPayloadNoErrorNoUpdateEscapedPath(t *testing.T) {
 func createUpdater(mr Requester) *Updater {
 	return &Updater{
 		CurrentVersion: "1.2",
-		ApiURL:         "http://updates.yourdomain.com/",
-		BinURL:         "http://updates.yourdownmain.com/",
-		DiffURL:        "http://updates.yourdomain.com/",
+		ApiURL:         "http://api.updates.yourdomain.com/",
+		BinURL:         "http://bin.updates.yourdownmain.com/",
+		DiffURL:        "http://diff.updates.yourdomain.com/",
 		Dir:            "update/",
 		CmdName:        "myapp", // app name
 		Requester:      mr,
@@ -115,9 +145,9 @@ func createUpdater(mr Requester) *Updater {
 func createUpdaterWithEscapedCharacters(mr Requester) *Updater {
 	return &Updater{
 		CurrentVersion: "1.2+foobar",
-		ApiURL:         "http://updates.yourdomain.com/",
-		BinURL:         "http://updates.yourdownmain.com/",
-		DiffURL:        "http://updates.yourdomain.com/",
+		ApiURL:         "http://api.updates.yourdomain.com/",
+		BinURL:         "http://bin.updates.yourdownmain.com/",
+		DiffURL:        "http://diff.updates.yourdomain.com/",
 		Dir:            "update/",
 		CmdName:        "myapp+foo", // app name
 		Requester:      mr,
