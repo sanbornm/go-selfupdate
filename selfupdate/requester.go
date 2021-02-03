@@ -6,6 +6,8 @@ import (
 	"net/http"
 )
 
+//go:generate mockgen -destination=./mocks/requester.go -package=mocks -source=requester.go
+
 // Requester interface allows developers to customize the method in which
 // requests are made to retrieve the version and binary
 type Requester interface {

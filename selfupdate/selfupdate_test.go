@@ -7,20 +7,20 @@ import (
 	"io"
 	"testing"
 	"time"
+
+	"github.com/golang/mock/gomock"
+	"github.com/sanbornm/go-selfupdate/selfupdate/mocks"
 )
 
 var testHash = sha256.New()
 
 func TestUpdaterFetchMustReturnNonNilReaderCloser(t *testing.T) {
-	mr := &mockRequester{}
-	mr.handleRequest(
-		func(url string) (io.ReadCloser, error) {
-			return nil, nil
-		})
-	updater := createUpdater(mr)
-	updater.CheckTime = 24
-	updater.RandomizeTime = 24
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+	mr := mocks.NewMockRequester(ctrl)
+	mr.EXPECT().Fetch("http://updates.yourdomain.com/myapp/darwin-amd64.json").Return(nil, nil).Times(1)
 
+	updater := createUpdater(mr)
 	err := updater.BackgroundRun()
 
 	if err != nil {
@@ -32,12 +32,11 @@ func TestUpdaterFetchMustReturnNonNilReaderCloser(t *testing.T) {
 }
 
 func TestUpdaterWithEmptyPayloadNoErrorNoUpdate(t *testing.T) {
-	mr := &mockRequester{}
-	mr.handleRequest(
-		func(url string) (io.ReadCloser, error) {
-			equals(t, "http://updates.yourdomain.com/myapp/darwin-amd64.json", url)
-			return newTestReaderCloser("{}"), nil
-		})
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+	mr := mocks.NewMockRequester(ctrl)
+	mr.EXPECT().Fetch("http://updates.yourdomain.com/myapp/darwin-amd64.json").Return(newTestReaderCloser("{}"), nil).Times(1)
+
 	updater := createUpdater(mr)
 	updater.CheckTime = 24
 	updater.RandomizeTime = 24
@@ -49,12 +48,10 @@ func TestUpdaterWithEmptyPayloadNoErrorNoUpdate(t *testing.T) {
 }
 
 func TestUpdaterCheckTime(t *testing.T) {
-	mr := &mockRequester{}
-	mr.handleRequest(
-		func(url string) (io.ReadCloser, error) {
-			equals(t, "http://updates.yourdomain.com/myapp/linux-amd64.json", url)
-			return newTestReaderCloser("{}"), nil
-		})
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+	mr := mocks.NewMockRequester(ctrl)
+	mr.EXPECT().Fetch("http://updates.yourdomain.com/myapp/darwin-amd64.json").Return(newTestReaderCloser("{}"), nil).Times(4)
 
 	// Run test with various time
 	runTestTimeChecks(t, mr, 0, 0, false)
@@ -64,7 +61,7 @@ func TestUpdaterCheckTime(t *testing.T) {
 }
 
 // Helper function to run check time tests
-func runTestTimeChecks(t *testing.T, mr *mockRequester, checkTime int, randomizeTime int, expectUpdate bool) {
+func runTestTimeChecks(t *testing.T, mr Requester, checkTime int, randomizeTime int, expectUpdate bool) {
 	updater := createUpdater(mr)
 	updater.ClearUpdateState()
 	updater.CheckTime = checkTime
@@ -103,7 +100,7 @@ func TestUpdaterWithEmptyPayloadNoErrorNoUpdateEscapedPath(t *testing.T) {
 	}
 }
 
-func createUpdater(mr *mockRequester) *Updater {
+func createUpdater(mr Requester) *Updater {
 	return &Updater{
 		CurrentVersion: "1.2",
 		ApiURL:         "http://updates.yourdomain.com/",
@@ -115,7 +112,7 @@ func createUpdater(mr *mockRequester) *Updater {
 	}
 }
 
-func createUpdaterWithEscapedCharacters(mr *mockRequester) *Updater {
+func createUpdaterWithEscapedCharacters(mr Requester) *Updater {
 	return &Updater{
 		CurrentVersion: "1.2+foobar",
 		ApiURL:         "http://updates.yourdomain.com/",

@@ -197,6 +197,9 @@ func (u *Updater) Update() error {
 	if err != nil {
 		return err
 	}
+	if u.Info.Version == "" {
+		return nil
+	}
 	if u.Info.Version == u.CurrentVersion {
 		return nil
 	}
@@ -245,8 +248,8 @@ func (u *Updater) fetchInfo() error {
 	if err != nil {
 		return err
 	}
-	if len(u.Info.Sha256) != sha256.Size {
-		return errors.New("bad cmd hash in info")
+	if u.Info.Version != "" && len(u.Info.Sha256) != sha256.Size {
+		return fmt.Errorf("bad cmd hash in info. Expected %v got %v", sha256.Size, len(u.Info.Sha256))
 	}
 	return nil
 }
