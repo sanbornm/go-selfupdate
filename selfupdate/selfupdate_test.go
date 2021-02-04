@@ -19,7 +19,7 @@ func TestUpdaterFetchMustReturnNonNilReaderCloser(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 	mr := mocks.NewMockRequester(ctrl)
-	mr.EXPECT().Fetch("http://api.updates.yourdomain.com/myapp/darwin-amd64.json").Return(nil, nil).Times(1)
+	mr.EXPECT().Fetch(fmt.Sprintf("http://api.updates.yourdomain.com/myapp/%v.json", plat)).Return(nil, nil).Times(1)
 
 	updater := createUpdater(mr)
 	err := updater.BackgroundRun()
@@ -36,7 +36,7 @@ func TestUpdaterWithEmptyPayloadNoErrorNoUpdate(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 	mr := mocks.NewMockRequester(ctrl)
-	mr.EXPECT().Fetch("http://api.updates.yourdomain.com/myapp/darwin-amd64.json").Return(newTestReaderCloser("{}"), nil).Times(1)
+	mr.EXPECT().Fetch(fmt.Sprintf("http://api.updates.yourdomain.com/myapp/%v.json", plat)).Return(newTestReaderCloser("{}"), nil).Times(1)
 	mr.EXPECT().Fetch(gomock.Any()).Times(0)
 
 	updater := createUpdater(mr)
@@ -58,9 +58,9 @@ func TestUpdaterWithNewVersionAndMissingBinaryReturnsError(t *testing.T) {
 	c := Info{Version: "1.3", Sha256: h.Sum(nil)}
 
 	b, err := json.MarshalIndent(c, "", "    ")
-	mr.EXPECT().Fetch("http://api.updates.yourdomain.com/myapp/darwin-amd64.json").Return(newTestReaderCloser(string(b)), nil).Times(1)
-	mr.EXPECT().Fetch("http://diff.updates.yourdomain.com/myapp/1.2/1.3/darwin-amd64").Return(newTestReaderCloser("{}"), fmt.Errorf("Bad status code on diff: 404")).Times(1)
-	mr.EXPECT().Fetch("http://bin.updates.yourdownmain.com/myapp/1.3/darwin-amd64.gz").Return(newTestReaderCloser("{}"), fmt.Errorf("Bad status code on binary: 404")).Times(1)
+	mr.EXPECT().Fetch(fmt.Sprintf("http://api.updates.yourdomain.com/myapp/%v.json", plat)).Return(newTestReaderCloser(string(b)), nil).Times(1)
+	mr.EXPECT().Fetch(fmt.Sprintf("http://diff.updates.yourdomain.com/myapp/1.2/1.3/%v", plat)).Return(newTestReaderCloser("{}"), fmt.Errorf("Bad status code on diff: 404")).Times(1)
+	mr.EXPECT().Fetch(fmt.Sprintf("http://bin.updates.yourdownmain.com/myapp/1.3/%v.gz", plat)).Return(newTestReaderCloser("{}"), fmt.Errorf("Bad status code on binary: 404")).Times(1)
 	mr.EXPECT().Fetch(gomock.Any()).Times(0)
 
 	updater := createUpdater(mr)
@@ -79,7 +79,7 @@ func TestUpdaterCheckTime(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 	mr := mocks.NewMockRequester(ctrl)
-	mr.EXPECT().Fetch("http://api.updates.yourdomain.com/myapp/darwin-amd64.json").Return(newTestReaderCloser("{}"), nil).Times(4)
+	mr.EXPECT().Fetch(fmt.Sprintf("http://api.updates.yourdomain.com/myapp/%v.json", plat)).Return(newTestReaderCloser("{}"), nil).Times(4)
 	mr.EXPECT().Fetch(gomock.Any()).Times(0) // no additional calls
 
 	// Run test with various time
@@ -118,7 +118,8 @@ func TestUpdaterWithEmptyPayloadNoErrorNoUpdateEscapedPath(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 	mr := mocks.NewMockRequester(ctrl)
-	mr.EXPECT().Fetch("http://api.updates.yourdomain.com/myapp%2Bfoo/darwin-amd64.json").Return(newTestReaderCloser("{}"), nil).Times(1)
+	basePath := "http://api.updates.yourdomain.com/myapp%2Bfoo"
+	mr.EXPECT().Fetch(fmt.Sprintf("%v/%v.json", basePath, plat)).Return(newTestReaderCloser("{}"), nil).Times(1)
 	mr.EXPECT().Fetch(gomock.Any()).Times(0) // no additional calls
 
 	updater := createUpdaterWithEscapedCharacters(mr)
