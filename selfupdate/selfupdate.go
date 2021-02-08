@@ -187,6 +187,11 @@ func (u *Updater) Update() error {
 	if err != nil {
 		return err
 	}
+
+	if resolvedPath, err := filepath.EvalSymlinks(path); err == nil {
+		path = resolvedPath
+	}
+
 	old, err := os.Open(path)
 	if err != nil {
 		return err
