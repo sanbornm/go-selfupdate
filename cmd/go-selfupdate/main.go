@@ -62,17 +62,6 @@ func newGzReader(r io.ReadCloser) io.ReadCloser {
 }
 
 func createUpdate(path string, platform string) {
-	c := current{Version: version, Sha256: generateSha256(path)}
-
-	b, err := json.MarshalIndent(c, "", "    ")
-	if err != nil {
-		fmt.Println("error:", err)
-	}
-	err = ioutil.WriteFile(filepath.Join(genDir, platform+".json"), b, 0755)
-	if err != nil {
-		panic(err)
-	}
-
 	os.MkdirAll(filepath.Join(genDir, version), 0755)
 
 	var buf bytes.Buffer
@@ -105,8 +94,7 @@ func createUpdate(path string, platform string) {
 		fName = filepath.Join(genDir, version, platform+".gz")
 		newF, err := os.Open(fName)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Can't open %s: error: %s\n", fName, err)
-			os.Exit(1)
+			panic(fmt.Sprintf("Can't open %s: error: %s", fName, err))
 		}
 
 		ar := newGzReader(old)
@@ -143,6 +131,16 @@ func createUpdate(path string, platform string) {
 	}
 	close(filesChan)
 	wg.Wait()
+
+	c := current{Version: version, Sha256: generateSha256(path)}
+	b, err := json.MarshalIndent(c, "", "    ")
+	if err != nil {
+		fmt.Println("error:", err)
+	}
+	err = ioutil.WriteFile(filepath.Join(genDir, platform+".json"), b, 0755)
+	if err != nil {
+		panic(err)
+	}
 }
 
 func printUsage() {
