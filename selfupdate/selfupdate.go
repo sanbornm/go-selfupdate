@@ -86,11 +86,22 @@ type Updater struct {
 	CheckTime      int       // Time in hours before next check
 	RandomizeTime  int       // Time in hours to randomize with CheckTime
 	Requester      Requester //Optional parameter to override existing http request handler
+	Result         ResultType
 	Info           struct {
 		Version string
 		Sha256  []byte
 	}
 }
+
+type ResultType uint
+
+const (
+	ErrorResult ResultType = iota
+	PatchResult
+	FullBinResult
+	AtLatestResult
+	NotWantedResult
+)
 
 func (u *Updater) getExecRelativeDir(dir string) string {
 	filename, _ := osext.Executable()
@@ -121,6 +132,8 @@ func (u *Updater) BackgroundRun() error {
 		if err := u.Update(); err != nil {
 			return err
 		}
+	} else {
+		u.Result = NotWantedResult
 	}
 	return nil
 }
@@ -198,8 +211,10 @@ func (u *Updater) Update() error {
 		return err
 	}
 	if u.Info.Version == u.CurrentVersion {
+		u.Result = AtLatestResult
 		return nil
 	}
+	var successResult ResultType
 	bin, err := u.fetchAndVerifyPatch(old)
 	if err != nil {
 		if err == ErrHashMismatch {
@@ -218,7 +233,11 @@ func (u *Updater) Update() error {
 				log.Println("update: fetching full binary,", err)
 			}
 			return err
+		} else {
+			successResult = FullBinResult
 		}
+	} else {
+		successResult = PatchResult
 	}
 
 	// close the old binary before installing because on windows
@@ -232,6 +251,7 @@ func (u *Updater) Update() error {
 	if err != nil {
 		return err
 	}
+	u.Result = successResult
 	return nil
 }
 
