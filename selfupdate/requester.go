@@ -48,7 +48,7 @@ func (mr *mockRequester) handleRequest(requestHandler func(string) (io.ReadClose
 
 func (mr *mockRequester) Fetch(url string) (io.ReadCloser, error) {
 	if len(mr.fetches) <= mr.currentIndex {
-		return nil, fmt.Errorf("No for currentIndex %d to mock", mr.currentIndex)
+		return nil, fmt.Errorf("no for currentIndex %d to mock", mr.currentIndex)
 	}
 	current := mr.fetches[mr.currentIndex]
 	mr.currentIndex++
