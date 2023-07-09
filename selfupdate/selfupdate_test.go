@@ -2,14 +2,10 @@ package selfupdate
 
 import (
 	"bytes"
-	"crypto/sha256"
-	"fmt"
 	"io"
 	"testing"
 	"time"
 )
-
-var testHash = sha256.New()
 
 func TestUpdaterFetchMustReturnNonNilReaderCloser(t *testing.T) {
 	mr := &mockRequester{}
@@ -129,7 +125,7 @@ func createUpdaterWithEscapedCharacters(mr *mockRequester) *Updater {
 
 func equals(t *testing.T, expected, actual interface{}) {
 	if expected != actual {
-		t.Log(fmt.Sprintf("Expected: %#v %#v\n", expected, actual))
+		t.Logf("Expected: %#v %#v\n", expected, actual)
 		t.Fail()
 	}
 }

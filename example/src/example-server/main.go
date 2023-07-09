@@ -1,20 +1,22 @@
 package main
 
 import (
-    "log"
-    "net/http"
+	"log"
+	"net/http"
 )
 
 type logHandler struct {
-    handler http.Handler
+	handler http.Handler
 }
 
 func (lh *logHandler) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
-    log.Printf("\n\texample-server received request %s\n", r.URL.RequestURI())
-    lh.handler.ServeHTTP(rw,r)
+	log.Printf("(example-server) received request %s\n", r.URL.RequestURI())
+	lh.handler.ServeHTTP(rw, r)
 }
 
 func main() {
-    // Simple static webserver with logging:
-    log.Fatal(http.ListenAndServe(":8080", &logHandler{handler:http.FileServer(http.Dir("./public"))}))
+	// Simple static webserver with logging:
+	log.Fatal(http.ListenAndServe(":8080", &logHandler{
+		handler: http.FileServer(http.Dir("./public"))},
+	))
 }

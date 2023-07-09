@@ -1,28 +1,26 @@
 // Update protocol:
 //
-//   GET hk.heroku.com/hk/linux-amd64.json
+//	GET yourserver.com/appname/linux-amd64.json
 //
-//   200 ok
-//   {
-//       "Version": "2",
-//       "Sha256": "..." // base64
-//   }
+//	200 ok
+//	{
+//	    "Version": "2",
+//	    "Sha256": "..." // base64
+//	}
 //
 // then
 //
-//   GET hkpatch.s3.amazonaws.com/hk/1/2/linux-amd64
+//	GET patches.yourserver.com/appname/1.1/1.2/linux-amd64
 //
-//   200 ok
-//   [bsdiff data]
+//	200 ok
+//	[bsdiff data]
 //
 // or
 //
-//   GET hkdist.s3.amazonaws.com/hk/2/linux-amd64.gz
+//	GET fullbins.yourserver.com/appname/1.0/linux-amd64.gz
 //
-//   200 ok
-//   [gzipped executable data]
-//
-//
+//	200 ok
+//	[gzipped executable data]
 package selfupdate
 
 import (
@@ -52,7 +50,8 @@ const (
 	plat         = runtime.GOOS + "-" + runtime.GOARCH
 )
 
-const devValidTime = 7 * 24 * time.Hour
+// TODO no longer used? remove?
+// const devValidTime = 7 * 24 * time.Hour
 
 var ErrHashMismatch = errors.New("new file hash mismatch after patch")
 var up = update.New()
@@ -64,17 +63,17 @@ var defaultHTTPRequester = HTTPRequester{}
 //
 // Example:
 //
-//  updater := &selfupdate.Updater{
-//  	CurrentVersion: version,
-//  	ApiURL:         "http://updates.yourdomain.com/",
-//  	BinURL:         "http://updates.yourdownmain.com/",
-//  	DiffURL:        "http://updates.yourdomain.com/",
-//  	Dir:            "update/",
-//  	CmdName:        "myapp", // app name
-//  }
-//  if updater != nil {
-//  	go updater.BackgroundRun()
-//  }
+//	updater := &selfupdate.Updater{
+//		CurrentVersion: version,
+//		ApiURL:         "http://updates.yourdomain.com/",
+//		BinURL:         "http://updates.yourdownmain.com/",
+//		DiffURL:        "http://updates.yourdomain.com/",
+//		Dir:            "update/",
+//		CmdName:        "myapp", // app name
+//	}
+//	if updater != nil {
+//		go updater.BackgroundRun()
+//	}
 type Updater struct {
 	CurrentVersion string    // Currently running version.
 	ApiURL         string    // Base URL for API requests (json files).
@@ -100,10 +99,12 @@ func (u *Updater) getExecRelativeDir(dir string) string {
 
 // BackgroundRun starts the update check and apply cycle.
 func (u *Updater) BackgroundRun() error {
-	if err := os.MkdirAll(u.getExecRelativeDir(u.Dir), 0777); err != nil {
+	if err := os.MkdirAll(u.getExecRelativeDir(u.Dir), 0755); err != nil {
 		// fail
 		return err
 	}
+	// check to see if we want to check for updates based on version
+	// and last update time
 	if u.WantUpdate() {
 		if err := up.CanUpdate(); err != nil {
 			// fail
@@ -112,12 +113,6 @@ func (u *Updater) BackgroundRun() error {
 
 		u.SetUpdateTime()
 
-		//self, err := osext.Executable()
-		//if err != nil {
-		// fail update, couldn't figure out path to self
-		//return
-		//}
-		// TODO(bgentry): logger isn't on Windows. Replace w/ proper error reports.
 		if err := u.Update(); err != nil {
 			return err
 		}
@@ -125,7 +120,9 @@ func (u *Updater) BackgroundRun() error {
 	return nil
 }
 
-// WantUpdate returns boolean designating if an update is desired
+// WantUpdate returns boolean designating if an update is desired. If the app's version
+// is `dev` WantUpdate will return false. If u.ForceCheck is true or cktime is after now
+// WantUpdate will return true.
 func (u *Updater) WantUpdate() bool {
 	if u.CurrentVersion == "dev" || (!u.ForceCheck && u.NextUpdate().After(time.Now())) {
 		return false
@@ -187,19 +184,24 @@ func (u *Updater) Update() error {
 	if err != nil {
 		return err
 	}
+
+	// go fetch latest updates manifest
+	err = u.fetchInfo()
+	if err != nil {
+		return err
+	}
+
+	// we are on the latest version, nothing to do
+	if u.Info.Version == u.CurrentVersion {
+		return nil
+	}
+
 	old, err := os.Open(path)
 	if err != nil {
 		return err
 	}
 	defer old.Close()
 
-	err = u.fetchInfo()
-	if err != nil {
-		return err
-	}
-	if u.Info.Version == u.CurrentVersion {
-		return nil
-	}
 	bin, err := u.fetchAndVerifyPatch(old)
 	if err != nil {
 		if err == ErrHashMismatch {
@@ -210,6 +212,7 @@ func (u *Updater) Update() error {
 			}
 		}
 
+		// if patch failed grab the full new bin
 		bin, err = u.fetchAndVerifyFullBin()
 		if err != nil {
 			if err == ErrHashMismatch {
@@ -235,6 +238,8 @@ func (u *Updater) Update() error {
 	return nil
 }
 
+// fetchInfo fetches the update JSON manifest at u.ApiURL/appname/platform.json
+// and updates u.Info.
 func (u *Updater) fetchInfo() error {
 	r, err := u.fetch(u.ApiURL + url.QueryEscape(u.CmdName) + "/" + url.QueryEscape(plat) + ".json")
 	if err != nil {
