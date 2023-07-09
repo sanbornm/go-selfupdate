@@ -185,6 +185,10 @@ func (u *Updater) Update() error {
 		return err
 	}
 
+	if resolvedPath, err := filepath.EvalSymlinks(path); err == nil {
+		path = resolvedPath
+	}
+
 	// go fetch latest updates manifest
 	err = u.fetchInfo()
 	if err != nil {
