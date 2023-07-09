@@ -1,5 +1,4 @@
-go-selfupdate
-=============
+# go-selfupdate
 
 [![GoDoc](https://godoc.org/github.com/sanbornm/go-selfupdate/selfupdate?status.svg)](https://godoc.org/github.com/sanbornm/go-selfupdate/selfupdate)
 [![Build Status](https://travis-ci.org/sanbornm/go-selfupdate.svg?branch=master)](https://travis-ci.org/sanbornm/go-selfupdate)
@@ -21,17 +20,21 @@ Enable your Golang applications to self update.  Inspired by Chrome based on Her
 ### Enable your App to Self Update
 
 	var updater = &selfupdate.Updater{
-		CurrentVersion: version,
-		ApiURL:         "http://updates.yourdomain.com/",
-		BinURL:         "http://updates.yourdomain.com/",
-		DiffURL:        "http://updates.yourdomain.com/",
-		Dir:            "update/",
-		CmdName:        "myapp", // app name
+		CurrentVersion: version, // the current version of your app used to determine if an update is necessary
+		// these endpoints can be the same if everything is hosted in the same place
+		ApiURL:         "http://updates.yourdomain.com/", // endpoint to get update manifest
+		BinURL:         "http://updates.yourdomain.com/", // endpoint to get full binaries
+		DiffURL:        "http://updates.yourdomain.com/", // endpoint to get binary diff/patches
+		Dir:            "update/",                        // directory to store temporary state files related to go-selfupdate
+		CmdName:        "myapp",                          // your app's name (must correspond to app name hosting the updates)
+		// app name allows you to serve updates for multiple apps on the same server/endpoint
 	}
 
+    // go look for an update when your app starts up
 	if updater != nil {
 		go updater.BackgroundRun()
 	}
+	// your app continues to run...
 
 ### Push Out and Update
 

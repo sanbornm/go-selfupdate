@@ -17,3 +17,4 @@ example/hello-updater
 example/public/*
 example/deployment/*
 example/go-selfupdate
+*cktime

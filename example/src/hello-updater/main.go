@@ -25,13 +25,15 @@ var updater = &selfupdate.Updater{
 }
 
 func main() {
+	log.SetFlags(log.LstdFlags | log.Lshortfile)
+
 	// print the current version
 	log.Printf("(hello-updater) Hello world! I am currently version: %q", updater.CurrentVersion)
 
 	// try to update
 	err := updater.BackgroundRun()
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalln("Failed to update app:", err)
 	}
 
 	// print out latest version available
