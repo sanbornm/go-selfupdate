@@ -59,6 +59,8 @@ If you are using [goxc](https://github.com/laher/goxc) you can output the files 
 
 ## Update Protocol
 
+Updates are fetched from an HTTP(s) server. AWS S3 or static hosting can be used. A JSON manifest file is pulled first which points to the wanted version (usually latest) and matching metadata. SHA256 hash is currently the only metadata but new fields may be added here like signatures. `go-selfupdate` isn't aware of any versioning schemes. It doesn't know major/minor versions. It just knows the target version by name and can apply diffs based on current version and version you wish to move to. For example 1.0 to 5.0 or 1.0 to 1.1. You don't even need to use point numbers. You can use hashes, dates, etc for versions.
+
 	GET yourserver.com/appname/linux-amd64.json
 
 	200 ok
