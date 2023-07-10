@@ -1,6 +1,7 @@
 # go-selfupdate
 
 [![GoDoc](https://godoc.org/github.com/sanbornm/go-selfupdate/selfupdate?status.svg)](https://godoc.org/github.com/sanbornm/go-selfupdate/selfupdate)
+![CI/CD](https://github.com/sanbornm/go-selfupdate/actions/workflows/go.yml/badge.svg)
 
 Enable your Golang applications to self update.  Inspired by Chrome based on Heroku's [hk](https://github.com/heroku/hk).
 
