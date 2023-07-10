@@ -31,7 +31,7 @@ func TestUpdaterWithEmptyPayloadNoErrorNoUpdate(t *testing.T) {
 	mr := &mockRequester{}
 	mr.handleRequest(
 		func(url string) (io.ReadCloser, error) {
-			equals(t, "http://updates.yourdomain.com/myapp/darwin-amd64.json", url)
+			equals(t, "http://updates.yourdomain.com/myapp/linux-amd64.json", url)
 			return newTestReaderCloser("{}"), nil
 		})
 	updater := createUpdater(mr)
@@ -99,6 +99,25 @@ func TestUpdaterWithEmptyPayloadNoErrorNoUpdateEscapedPath(t *testing.T) {
 	}
 }
 
+func TestUpdateAvailable(t *testing.T) {
+	mr := &mockRequester{}
+	mr.handleRequest(
+		func(url string) (io.ReadCloser, error) {
+			equals(t, "http://updates.yourdomain.com/myapp/linux-amd64.json", url)
+			return newTestReaderCloser(`{
+    "Version": "2023-07-09-66c6c12",
+    "Sha256": "Q2vvTOW0p69A37StVANN+/ko1ZQDTElomq7fVcex/02="
+}`), nil
+		})
+	updater := createUpdater(mr)
+
+	version, err := updater.UpdateAvailable()
+	if err != nil {
+		t.Errorf("Error occurred: %#v", err)
+	}
+	equals(t, "2023-07-09-66c6c12", version)
+}
+
 func createUpdater(mr *mockRequester) *Updater {
 	return &Updater{
 		CurrentVersion: "1.2",
@@ -125,7 +144,7 @@ func createUpdaterWithEscapedCharacters(mr *mockRequester) *Updater {
 
 func equals(t *testing.T, expected, actual interface{}) {
 	if expected != actual {
-		t.Logf("Expected: %#v %#v\n", expected, actual)
+		t.Logf("Expected: %#v got %#v\n", expected, actual)
 		t.Fail()
 	}
 }

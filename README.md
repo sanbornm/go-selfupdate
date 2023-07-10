@@ -19,6 +19,8 @@ Enable your Golang applications to self update.  Inspired by Chrome based on Her
 
 ### Enable your App to Self Update
 
+`go get -u github.com/sanbornm/go-selfupdate/...`
+
 	var updater = &selfupdate.Updater{
 		CurrentVersion: version, // the current version of your app used to determine if an update is necessary
 		// these endpoints can be the same if everything is hosted in the same place
@@ -38,9 +40,10 @@ Enable your Golang applications to self update.  Inspired by Chrome based on Her
 
 ### Push Out and Update
 
+	go-selfupdate path-to-your-app the-version
     go-selfupdate myapp 1.2
 
-This will create a folder in your project called, *public* you can then rsync or transfer this to your webserver or S3.
+By default this will create a folder in your project called *public*. You can then rsync or transfer this to your webserver or S3. To change the output directory use `-o` flag.
 
 If you are cross compiling you can specify a directory:
 
@@ -55,3 +58,29 @@ The directory should contain files with the name, $GOOS-$ARCH. Example:
 If you are using [goxc](https://github.com/laher/goxc) you can output the files with this naming format by specifying this config:
 
     "OutPath": "{{.Dest}}{{.PS}}{{.Version}}{{.PS}}{{.Os}}-{{.Arch}}",
+
+## Update Protocol
+
+	GET yourserver.com/appname/linux-amd64.json
+
+	200 ok
+	{
+		"Version": "2",
+		"Sha256": "..." // base64
+	}
+
+	then
+
+	GET patches.yourserver.com/appname/1.1/1.2/linux-amd64
+
+	200 ok
+	[bsdiff data]
+
+	or
+
+	GET fullbins.yourserver.com/appname/1.0/linux-amd64.gz
+
+	200 ok
+	[gzipped executable data]
+
+The only required files are `<appname>/<os>-<arch>.json` and `<appname>/<latest>/<os>-<arch>.gz` everything else is optional. If you wanted to you could skip using go-selfupdate CLI tool and generate these two files manually or with another tool.

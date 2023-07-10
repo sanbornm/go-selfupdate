@@ -1,26 +1,3 @@
-// Update protocol:
-//
-//	GET yourserver.com/appname/linux-amd64.json
-//
-//	200 ok
-//	{
-//	    "Version": "2",
-//	    "Sha256": "..." // base64
-//	}
-//
-// then
-//
-//	GET patches.yourserver.com/appname/1.1/1.2/linux-amd64
-//
-//	200 ok
-//	[bsdiff data]
-//
-// or
-//
-//	GET fullbins.yourserver.com/appname/1.0/linux-amd64.gz
-//
-//	200 ok
-//	[gzipped executable data]
 package selfupdate
 
 import (
@@ -46,16 +23,17 @@ import (
 )
 
 const (
-	upcktimePath = "cktime"
-	plat         = runtime.GOOS + "-" + runtime.GOARCH
+	// holds a timestamp which triggers the next update
+	upcktimePath = "cktime"                            // path to timestamp file relative to u.Dir
+	plat         = runtime.GOOS + "-" + runtime.GOARCH // ex: linux-amd64
 )
 
-// TODO no longer used? remove?
-// const devValidTime = 7 * 24 * time.Hour
+var (
+	ErrHashMismatch = errors.New("new file hash mismatch after patch")
 
-var ErrHashMismatch = errors.New("new file hash mismatch after patch")
-var up = update.New()
-var defaultHTTPRequester = HTTPRequester{}
+	up                   = update.New()
+	defaultHTTPRequester = HTTPRequester{}
+)
 
 // Updater is the configuration and runtime data for doing an update.
 //
@@ -75,8 +53,8 @@ var defaultHTTPRequester = HTTPRequester{}
 //		go updater.BackgroundRun()
 //	}
 type Updater struct {
-	CurrentVersion string    // Currently running version.
-	ApiURL         string    // Base URL for API requests (json files).
+	CurrentVersion string    // Currently running version. `dev` is a special version here and will cause the updater to never update.
+	ApiURL         string    // Base URL for API requests (JSON files).
 	CmdName        string    // Command name is appended to the ApiURL like http://apiurl/CmdName/. This represents one binary.
 	BinURL         string    // Base URL for full binary downloads.
 	DiffURL        string    // Base URL for diff downloads.
@@ -84,7 +62,7 @@ type Updater struct {
 	ForceCheck     bool      // Check for update regardless of cktime timestamp
 	CheckTime      int       // Time in hours before next check
 	RandomizeTime  int       // Time in hours to randomize with CheckTime
-	Requester      Requester //Optional parameter to override existing http request handler
+	Requester      Requester // Optional parameter to override existing HTTP request handler
 	Info           struct {
 		Version string
 		Sha256  []byte
