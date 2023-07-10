@@ -67,6 +67,7 @@ type Updater struct {
 		Version string
 		Sha256  []byte
 	}
+	OnSuccessfulUpdate func() // Optional function to run after an update has successfully taken place
 }
 
 func (u *Updater) getExecRelativeDir(dir string) string {
@@ -217,6 +218,12 @@ func (u *Updater) Update() error {
 	if err != nil {
 		return err
 	}
+
+	// update was successful, run func if set
+	if u.OnSuccessfulUpdate != nil {
+		u.OnSuccessfulUpdate()
+	}
+
 	return nil
 }
 

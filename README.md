@@ -27,15 +27,13 @@ Enable your Golang applications to self update.  Inspired by Chrome based on Her
 		ApiURL:         "http://updates.yourdomain.com/", // endpoint to get update manifest
 		BinURL:         "http://updates.yourdomain.com/", // endpoint to get full binaries
 		DiffURL:        "http://updates.yourdomain.com/", // endpoint to get binary diff/patches
-		Dir:            "update/",                        // directory to store temporary state files related to go-selfupdate
+		Dir:            "update/",                        // directory relative to your app to store temporary state files related to go-selfupdate
 		CmdName:        "myapp",                          // your app's name (must correspond to app name hosting the updates)
 		// app name allows you to serve updates for multiple apps on the same server/endpoint
 	}
 
     // go look for an update when your app starts up
-	if updater != nil {
-		go updater.BackgroundRun()
-	}
+	go updater.BackgroundRun()
 	// your app continues to run...
 
 ### Push Out and Update
@@ -84,3 +82,35 @@ If you are using [goxc](https://github.com/laher/goxc) you can output the files 
 	[gzipped executable data]
 
 The only required files are `<appname>/<os>-<arch>.json` and `<appname>/<latest>/<os>-<arch>.gz` everything else is optional. If you wanted to you could skip using go-selfupdate CLI tool and generate these two files manually or with another tool.
+
+## Config
+
+Updater Config options:
+
+	type Updater struct {
+		CurrentVersion string    // Currently running version. `dev` is a special version here and will cause the updater to never update.
+		ApiURL         string    // Base URL for API requests (JSON files).
+		CmdName        string    // Command name is appended to the ApiURL like http://apiurl/CmdName/. This represents one binary.
+		BinURL         string    // Base URL for full binary downloads.
+		DiffURL        string    // Base URL for diff downloads.
+		Dir            string    // Directory to store selfupdate state.
+		ForceCheck     bool      // Check for update regardless of cktime timestamp
+		CheckTime      int       // Time in hours before next check
+		RandomizeTime  int       // Time in hours to randomize with CheckTime
+		Requester      Requester // Optional parameter to override existing HTTP request handler
+		Info           struct {
+			Version string
+			Sha256  []byte
+		}
+		OnSuccessfulUpdate func() // Optional function to run after an update has successfully taken place
+	}
+
+### Restart on update
+
+It is common for an app to want to restart to apply the update. `go-selfupdate` gives you a hook to do that but leaves it up to you on how and when to restart as it differs for all apps. If you have a service restart application like Docker or systemd you can simply exit and let the upstream app start/restart your application. Just set the `OnSuccessfulUpdate` hook:
+
+	u.OnSuccessfulUpdate = func() { os.Exit(0) }
+
+Or maybe you have a fancy graceful restart library/func:
+
+	u.OnSuccessfulUpdate = func() { gracefullyRestartMyApp() }
