@@ -17,7 +17,6 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/kardianos/osext"
 	"github.com/kr/binarydist"
 	"gopkg.in/inconshreveable/go-update.v0"
 )
@@ -71,7 +70,7 @@ type Updater struct {
 }
 
 func (u *Updater) getExecRelativeDir(dir string) string {
-	filename, _ := osext.Executable()
+	filename, _ := os.Executable()
 	path := filepath.Join(filepath.Dir(filename), dir)
 	return path
 }
@@ -136,7 +135,7 @@ func (u *Updater) ClearUpdateState() {
 
 // UpdateAvailable checks if update is available and returns version
 func (u *Updater) UpdateAvailable() (string, error) {
-	path, err := osext.Executable()
+	path, err := os.Executable()
 	if err != nil {
 		return "", err
 	}
@@ -159,7 +158,7 @@ func (u *Updater) UpdateAvailable() (string, error) {
 
 // Update initiates the self update process
 func (u *Updater) Update() error {
-	path, err := osext.Executable()
+	path, err := os.Executable()
 	if err != nil {
 		return err
 	}
