@@ -18,7 +18,6 @@ import (
 	"time"
 
 	"github.com/kr/binarydist"
-	"gopkg.in/inconshreveable/go-update.v0"
 )
 
 const (
@@ -30,7 +29,6 @@ const (
 var (
 	ErrHashMismatch = errors.New("new file hash mismatch after patch")
 
-	up                   = update.New()
 	defaultHTTPRequester = HTTPRequester{}
 )
 
@@ -75,6 +73,28 @@ func (u *Updater) getExecRelativeDir(dir string) string {
 	return path
 }
 
+func canUpdate() (err error) {
+	// get the directory the file exists in
+	path, err := os.Executable()
+	if err != nil {
+		return
+	}
+
+	fileDir := filepath.Dir(path)
+	fileName := filepath.Base(path)
+
+	// attempt to open a file in the file's directory
+	newPath := filepath.Join(fileDir, fmt.Sprintf(".%s.new", fileName))
+	fp, err := os.OpenFile(newPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0755)
+	if err != nil {
+		return
+	}
+	fp.Close()
+
+	_ = os.Remove(newPath)
+	return
+}
+
 // BackgroundRun starts the update check and apply cycle.
 func (u *Updater) BackgroundRun() error {
 	if err := os.MkdirAll(u.getExecRelativeDir(u.Dir), 0755); err != nil {
@@ -84,7 +104,7 @@ func (u *Updater) BackgroundRun() error {
 	// check to see if we want to check for updates based on version
 	// and last update time
 	if u.WantUpdate() {
-		if err := up.CanUpdate(); err != nil {
+		if err := canUpdate(); err != nil {
 			// fail
 			return err
 		}
@@ -210,7 +230,7 @@ func (u *Updater) Update() error {
 	// it can't be renamed if a handle to the file is still open
 	old.Close()
 
-	err, errRecover := up.FromStream(bytes.NewBuffer(bin))
+	err, errRecover := fromStream(bytes.NewBuffer(bin))
 	if errRecover != nil {
 		return fmt.Errorf("update and recovery errors: %q %q", err, errRecover)
 	}
@@ -224,6 +244,68 @@ func (u *Updater) Update() error {
 	}
 
 	return nil
+}
+
+func fromStream(updateWith io.Reader) (err error, errRecover error) {
+	updatePath, err := os.Executable()
+	if err != nil {
+		return
+	}
+
+	var newBytes []byte
+	newBytes, err = ioutil.ReadAll(updateWith)
+	if err != nil {
+		return
+	}
+
+	// get the directory the executable exists in
+	updateDir := filepath.Dir(updatePath)
+	filename := filepath.Base(updatePath)
+
+	// Copy the contents of of newbinary to a the new executable file
+	newPath := filepath.Join(updateDir, fmt.Sprintf(".%s.new", filename))
+	fp, err := os.OpenFile(newPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0755)
+	if err != nil {
+		return
+	}
+	defer fp.Close()
+	_, err = io.Copy(fp, bytes.NewReader(newBytes))
+
+	// if we don't call fp.Close(), windows won't let us move the new executable
+	// because the file will still be "in use"
+	fp.Close()
+
+	// this is where we'll move the executable to so that we can swap in the updated replacement
+	oldPath := filepath.Join(updateDir, fmt.Sprintf(".%s.old", filename))
+
+	// delete any existing old exec file - this is necessary on Windows for two reasons:
+	// 1. after a successful update, Windows can't remove the .old file because the process is still running
+	// 2. windows rename operations fail if the destination file already exists
+	_ = os.Remove(oldPath)
+
+	// move the existing executable to a new file in the same directory
+	err = os.Rename(updatePath, oldPath)
+	if err != nil {
+		return
+	}
+
+	// move the new exectuable in to become the new program
+	err = os.Rename(newPath, updatePath)
+
+	if err != nil {
+		// copy unsuccessful
+		errRecover = os.Rename(oldPath, updatePath)
+	} else {
+		// copy successful, remove the old binary
+		errRemove := os.Remove(oldPath)
+
+		// windows has trouble with removing old binaries, so hide it instead
+		if errRemove != nil {
+			_ = hideFile(oldPath)
+		}
+	}
+
+	return
 }
 
 // fetchInfo fetches the update JSON manifest at u.ApiURL/appname/platform.json
