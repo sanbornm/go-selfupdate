@@ -116,3 +116,7 @@ It is common for an app to want to restart to apply the update. `go-selfupdate` 
 Or maybe you have a fancy graceful restart library/func:
 
 	u.OnSuccessfulUpdate = func() { gracefullyRestartMyApp() }
+
+## State
+
+go-selfupdate will keep a Go time.Time formatted timestamp in a file named `cktime` in folder specified by `Updater.Dir`. This can be useful for debugging to see when the next update can be applied or allow other applications to manipulate it.
