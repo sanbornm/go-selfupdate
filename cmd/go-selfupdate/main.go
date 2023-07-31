@@ -8,10 +8,12 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"runtime"
+	"sync"
 
 	"github.com/kr/binarydist"
 )
@@ -60,17 +62,6 @@ func newGzReader(r io.ReadCloser) io.ReadCloser {
 }
 
 func createUpdate(path string, platform string) {
-	c := current{Version: version, Sha256: generateSha256(path)}
-
-	b, err := json.MarshalIndent(c, "", "    ")
-	if err != nil {
-		fmt.Println("error:", err)
-	}
-	err = ioutil.WriteFile(filepath.Join(genDir, platform+".json"), b, 0755)
-	if err != nil {
-		panic(err)
-	}
-
 	os.MkdirAll(filepath.Join(genDir, version), 0755)
 
 	var buf bytes.Buffer
@@ -83,17 +74,12 @@ func createUpdate(path string, platform string) {
 	w.Close() // You must close this first to flush the bytes to the buffer.
 	err = ioutil.WriteFile(filepath.Join(genDir, version, platform+".gz"), buf.Bytes(), 0755)
 
-	files, err := ioutil.ReadDir(genDir)
-	if err != nil {
-		fmt.Println(err)
-	}
-
-	for _, file := range files {
+	processUpdate := func(file fs.FileInfo) {
 		if file.IsDir() == false {
-			continue
+			return
 		}
 		if file.Name() == version {
-			continue
+			return
 		}
 
 		os.Mkdir(filepath.Join(genDir, file.Name(), version), 0755)
@@ -102,14 +88,13 @@ func createUpdate(path string, platform string) {
 		old, err := os.Open(fName)
 		if err != nil {
 			// Don't have an old release for this os/arch, continue on
-			continue
+			return
 		}
 
 		fName = filepath.Join(genDir, version, platform+".gz")
 		newF, err := os.Open(fName)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Can't open %s: error: %s\n", fName, err)
-			os.Exit(1)
+			panic(fmt.Sprintf("Can't open %s: error: %s", fName, err))
 		}
 
 		ar := newGzReader(old)
@@ -121,6 +106,40 @@ func createUpdate(path string, platform string) {
 			panic(err)
 		}
 		ioutil.WriteFile(filepath.Join(genDir, file.Name(), version, platform), patch.Bytes(), 0755)
+	}
+
+	files, err := ioutil.ReadDir(genDir)
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	// spin up parallel workers to process the files:
+	numWorkers := runtime.NumCPU()
+	filesChan := make(chan fs.FileInfo)
+	var wg sync.WaitGroup
+	wg.Add(numWorkers)
+	for i := 0; i < numWorkers; i++ {
+		go func() {
+			for file := range filesChan {
+				processUpdate(file)
+			}
+			wg.Done()
+		}()
+	}
+	for _, file := range files {
+		filesChan <- file
+	}
+	close(filesChan)
+	wg.Wait()
+
+	c := current{Version: version, Sha256: generateSha256(path)}
+	b, err := json.MarshalIndent(c, "", "    ")
+	if err != nil {
+		fmt.Println("error:", err)
+	}
+	err = ioutil.WriteFile(filepath.Join(genDir, platform+".json"), b, 0755)
+	if err != nil {
+		panic(err)
 	}
 }
 
