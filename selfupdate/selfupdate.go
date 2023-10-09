@@ -68,6 +68,9 @@ type Updater struct {
 }
 
 func (u *Updater) getExecRelativeDir(dir string) string {
+	if dir[0] == '/' || dir[1] == ':' {
+		return dir
+	}
 	filename, _ := os.Executable()
 	path := filepath.Join(filepath.Dir(filename), dir)
 	return path
