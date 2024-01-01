@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 echo "This example will compile the hello-updater application a few times with"
 echo "different version strings and demonstrate go-selfupdate's functionality."
