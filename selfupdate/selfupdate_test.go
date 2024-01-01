@@ -2,6 +2,7 @@ package selfupdate
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"io"
 	"testing"
 	"time"
@@ -163,4 +164,32 @@ func (trc *testReadCloser) Read(p []byte) (n int, err error) {
 
 func (trc *testReadCloser) Close() error {
 	return nil
+}
+
+func TestVerifySha(t *testing.T) {
+	testCases := []struct {
+		name     string
+		bin      []byte
+		expected [32]byte
+	}{
+		{
+			name:     "case 1",
+			bin:      []byte("some data"),
+			expected: sha256.Sum256([]byte("some data")),
+		},
+		{
+			name:     "case 2",
+			bin:      []byte("other data"),
+			expected: sha256.Sum256([]byte("other data")),
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := verifySha(tc.bin, tc.expected[:])
+			if !result {
+				t.Errorf("Expected true, but got false")
+			}
+		})
+	}
 }
