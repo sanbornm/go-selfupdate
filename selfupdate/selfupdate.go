@@ -8,11 +8,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"math/rand"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"time"
@@ -56,6 +56,7 @@ type Updater struct {
 	BinURL         string    // Base URL for full binary downloads.
 	DiffURL        string    // Base URL for diff downloads.
 	Dir            string    // Directory to store selfupdate state.
+	UpdatePath     string    // Path to update file. Default is current executable
 	ForceCheck     bool      // Check for update regardless of cktime timestamp
 	CheckTime      int       // Time in hours before next check
 	RandomizeTime  int       // Time in hours to randomize with CheckTime
@@ -67,15 +68,22 @@ type Updater struct {
 	OnSuccessfulUpdate func() // Optional function to run after an update has successfully taken place
 }
 
-func (u *Updater) getExecRelativeDir(dir string) string {
-	filename, _ := os.Executable()
+func (u *Updater) getUpdatePathRelativeDir(dir string) string {
+	filename, _ := u.getUpdatePath()
 	path := filepath.Join(filepath.Dir(filename), dir)
 	return path
 }
 
-func canUpdate() (err error) {
-	// get the directory the file exists in
-	path, err := os.Executable()
+func (u *Updater) getUpdatePath() (string, error) {
+	if u.UpdatePath != "" {
+		return u.UpdatePath, nil
+	}
+
+	return os.Executable()
+}
+
+func (u *Updater) canUpdate() (err error) {
+	path, err := u.getUpdatePath()
 	if err != nil {
 		return
 	}
@@ -97,14 +105,14 @@ func canUpdate() (err error) {
 
 // BackgroundRun starts the update check and apply cycle.
 func (u *Updater) BackgroundRun() error {
-	if err := os.MkdirAll(u.getExecRelativeDir(u.Dir), 0755); err != nil {
+	if err := os.MkdirAll(u.getUpdatePathRelativeDir(u.Dir), 0755); err != nil {
 		// fail
 		return err
 	}
 	// check to see if we want to check for updates based on version
 	// and last update time
 	if u.WantUpdate() {
-		if err := canUpdate(); err != nil {
+		if err := u.canUpdate(); err != nil {
 			// fail
 			return err
 		}
@@ -131,7 +139,7 @@ func (u *Updater) WantUpdate() bool {
 
 // NextUpdate returns the next time update should be checked
 func (u *Updater) NextUpdate() time.Time {
-	path := u.getExecRelativeDir(u.Dir + upcktimePath)
+	path := u.getUpdatePathRelativeDir(u.Dir + upcktimePath)
 	nextTime := readTime(path)
 
 	return nextTime
@@ -139,7 +147,7 @@ func (u *Updater) NextUpdate() time.Time {
 
 // SetUpdateTime writes the next update time to the state file
 func (u *Updater) SetUpdateTime() bool {
-	path := u.getExecRelativeDir(u.Dir + upcktimePath)
+	path := u.getUpdatePathRelativeDir(u.Dir + upcktimePath)
 	wait := time.Duration(u.CheckTime) * time.Hour
 	// Add 1 to random time since max is not included
 	waitrand := time.Duration(rand.Intn(u.RandomizeTime+1)) * time.Hour
@@ -149,21 +157,27 @@ func (u *Updater) SetUpdateTime() bool {
 
 // ClearUpdateState writes current time to state file
 func (u *Updater) ClearUpdateState() {
-	path := u.getExecRelativeDir(u.Dir + upcktimePath)
+	path := u.getUpdatePathRelativeDir(u.Dir + upcktimePath)
 	os.Remove(path)
 }
 
 // UpdateAvailable checks if update is available and returns version
 func (u *Updater) UpdateAvailable() (string, error) {
-	path, err := os.Executable()
+	path, err := u.getUpdatePath()
 	if err != nil {
 		return "", err
 	}
-	old, err := os.Open(path)
+	fileInfo, err := os.Stat(path)
 	if err != nil {
 		return "", err
 	}
-	defer old.Close()
+	if !fileInfo.IsDir() {
+		old, err := os.Open(path)
+		if err != nil {
+			return "", err
+		}
+		defer old.Close()
+	}
 
 	err = u.fetchInfo()
 	if err != nil {
@@ -178,7 +192,7 @@ func (u *Updater) UpdateAvailable() (string, error) {
 
 // Update initiates the self update process
 func (u *Updater) Update() error {
-	path, err := os.Executable()
+	path, err := u.getUpdatePath()
 	if err != nil {
 		return err
 	}
@@ -198,23 +212,46 @@ func (u *Updater) Update() error {
 		return nil
 	}
 
-	old, err := os.Open(path)
+	fileInfo, err := os.Stat(path)
 	if err != nil {
 		return err
 	}
-	defer old.Close()
+	var bin []byte
 
-	bin, err := u.fetchAndVerifyPatch(old)
-	if err != nil {
-		if err == ErrHashMismatch {
-			log.Println("update: hash mismatch from patched binary")
-		} else {
-			if u.DiffURL != "" {
-				log.Println("update: patching binary,", err)
+	if !fileInfo.IsDir() {
+		old, err := os.Open(path)
+		if err != nil {
+			return err
+		}
+		defer old.Close()
+
+		bin, err = u.fetchAndVerifyPatch(old)
+		if err != nil {
+			if err == ErrHashMismatch {
+				log.Println("update: hash mismatch from patched binary")
+			} else {
+				if u.DiffURL != "" {
+					log.Println("update: patching binary,", err)
+				}
+			}
+
+			// if patch failed grab the full new bin
+			bin, err = u.fetchAndVerifyFullBin()
+			if err != nil {
+				if err == ErrHashMismatch {
+					log.Println("update: hash mismatch from full binary")
+				} else {
+					log.Println("update: fetching full binary,", err)
+				}
+				return err
 			}
 		}
 
-		// if patch failed grab the full new bin
+		// close the old binary before installing because on windows
+		// it can't be renamed if a handle to the file is still open
+		old.Close()
+	} else {
+		// incremental update is not supported for directories
 		bin, err = u.fetchAndVerifyFullBin()
 		if err != nil {
 			if err == ErrHashMismatch {
@@ -226,11 +263,7 @@ func (u *Updater) Update() error {
 		}
 	}
 
-	// close the old binary before installing because on windows
-	// it can't be renamed if a handle to the file is still open
-	old.Close()
-
-	err, errRecover := fromStream(bytes.NewBuffer(bin))
+	err, errRecover := u.fromStream(bytes.NewBuffer(bin))
 	if errRecover != nil {
 		return fmt.Errorf("update and recovery errors: %q %q", err, errRecover)
 	}
@@ -246,14 +279,18 @@ func (u *Updater) Update() error {
 	return nil
 }
 
-func fromStream(updateWith io.Reader) (err error, errRecover error) {
-	updatePath, err := os.Executable()
+func (u *Updater) fromStream(updateWith io.Reader) (err error, errRecover error) {
+	updatePath, err := u.getUpdatePath()
+	if err != nil {
+		return
+	}
+	fileInfo, err := os.Stat(updatePath)
 	if err != nil {
 		return
 	}
 
 	var newBytes []byte
-	newBytes, err = ioutil.ReadAll(updateWith)
+	newBytes, err = io.ReadAll(updateWith)
 	if err != nil {
 		return
 	}
@@ -289,8 +326,13 @@ func fromStream(updateWith io.Reader) (err error, errRecover error) {
 		return
 	}
 
-	// move the new exectuable in to become the new program
-	err = os.Rename(newPath, updatePath)
+	if !fileInfo.IsDir() {
+		// move the new exectuable in to become the new program
+		err = os.Rename(newPath, updatePath)
+	} else {
+		// if the initial path to update is a directory, we need to unarchive the downloaded file
+		err = unarchive(newPath, updatePath)
+	}
 
 	if err != nil {
 		// copy unsuccessful
@@ -306,6 +348,20 @@ func fromStream(updateWith io.Reader) (err error, errRecover error) {
 	}
 
 	return
+}
+
+func unarchive(sourcePath, destinationPath string) error {
+	// Execute unzip command
+	cmd := exec.Command("unzip", "-o", sourcePath, "-d", destinationPath)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	err := cmd.Run()
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // fetchInfo fetches the update JSON manifest at u.ApiURL/appname/platform.json
@@ -396,7 +452,7 @@ func (u *Updater) fetch(url string) (io.ReadCloser, error) {
 }
 
 func readTime(path string) time.Time {
-	p, err := ioutil.ReadFile(path)
+	p, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
 		return time.Time{}
 	}
@@ -417,5 +473,5 @@ func verifySha(bin []byte, sha []byte) bool {
 }
 
 func writeTime(path string, t time.Time) bool {
-	return ioutil.WriteFile(path, []byte(t.Format(time.RFC3339)), 0644) == nil
+	return os.WriteFile(path, []byte(t.Format(time.RFC3339)), 0644) == nil
 }
